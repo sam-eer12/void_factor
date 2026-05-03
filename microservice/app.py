@@ -2,7 +2,7 @@ from fastapi import FastAPI, Header, UploadFile, File, HTTPException, Request
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-import google as genai
+import google.generativeai as genai
 import json
 import uvicorn
 from dotenv import load_dotenv
@@ -31,7 +31,7 @@ async def analyze_with_gemini(
         raise HTTPException(status_code=401, detail="Gemini API Key missing")
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-3.1-flash-lite-preview')
     
     image_data = await image.read()
     prompt = "Analyze food image. Return JSON: {food_name, calories, protein_g, carbs_g, fats_g}"
