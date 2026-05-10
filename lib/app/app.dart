@@ -8,7 +8,7 @@ class MonolithApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'MONOLITH',
+      title: 'void_factor',
       debugShowCheckedModeBanner: false,
       theme: MonolithTheme.themeData,
       initialRoute: AppRoutes.login,

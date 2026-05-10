@@ -38,12 +38,10 @@ class _LoginScreenState extends State<LoginScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: MonolithTheme.invertedCardDecoration,
-                child: Text(
-                  'M',
-                  style: MonolithTheme.displayLarge.copyWith(
-                    color: MonolithTheme.surface,
-                    fontSize: 48,
-                  ),
+                child: Image.asset(
+                  'assets/images/icon1.png',
+                  height: 64,
+                  fit: BoxFit.contain,
                 ),
               ),
               const SizedBox(height: 40),
