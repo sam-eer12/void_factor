@@ -36,12 +36,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // ── MONOLITH Logo ──
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.zero,
                 decoration: MonolithTheme.invertedCardDecoration,
                 child: Image.asset(
-                  'assets/images/icon1.png',
-                  height: 64,
-                  fit: BoxFit.contain,
+                  'assets/images/icon3.jpg',
+                  height: 105,
+                  fit: BoxFit.cover,
                 ),
               ),
               const SizedBox(height: 40),
