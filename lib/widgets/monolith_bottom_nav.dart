@@ -44,10 +44,10 @@ class MonolithBottomNav extends StatelessWidget {
       unselectedLabelColor: const Color(0xFF333333),
       indicatorColor: MonolithTheme.primary.withValues(alpha: 0.15),
       settings: const LiquidGlassSettings(
-        thickness: 1.5,
-        blur: 10,
-        refractiveIndex: 1.15,
-        glassColor: Colors.white12,
+        thickness: 0.8,
+        blur: 4,
+        refractiveIndex: 1.8,
+        glassColor: Color(0x03FFFFFF),
       ),
     );
   }
