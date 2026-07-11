@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
-import '../../widgets/monolith_bottom_nav.dart';
 import '../../widgets/monolith_drawer.dart';
+import '../dashboard/monolith_shell.dart';
 
 class ProjectionsScreen extends StatelessWidget {
   const ProjectionsScreen({super.key});
@@ -17,10 +17,11 @@ class ProjectionsScreen extends StatelessWidget {
       drawer: MonolithDrawer(
         onProfileTap: () {
           Navigator.pop(context);
-          Navigator.pushNamed(context, '/settings');
+          MonolithShell.setActiveTab(context, 3, '/settings');
         },
         onDashboardTap: () {
-          Navigator.pushReplacementNamed(context, '/dashboard');
+          Navigator.pop(context);
+          MonolithShell.setActiveTab(context, 0, '/dashboard');
         },
         onHistoryTap: () {
           Navigator.pop(context);
@@ -226,19 +227,6 @@ class ProjectionsScreen extends StatelessWidget {
                   ],
                 ),
               ),
-            ),
-
-            MonolithBottomNav(
-              currentIndex: 2,
-              onTap: (i) {
-                if (i == 0) {
-                  Navigator.pushReplacementNamed(context, '/dashboard');
-                } else if (i == 1) {
-                  Navigator.pushReplacementNamed(context, '/ai-vision');
-                } else if (i == 3) {
-                  Navigator.pushReplacementNamed(context, '/settings');
-                }
-              },
             ),
           ],
         ),

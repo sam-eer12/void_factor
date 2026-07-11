@@ -3,11 +3,8 @@ import '../screens/auth/login_screen.dart';
 import '../screens/auth/signup_screen.dart';
 import '../screens/auth/otp_screen.dart';
 import '../screens/onboarding/profile_init_screen.dart';
-import '../screens/dashboard/dashboard_screen.dart';
-import '../screens/vision/ai_vision_screen.dart';
-import '../screens/stats/projections_screen.dart';
+import '../screens/dashboard/monolith_shell.dart';
 import '../screens/food_log/manual_food_log_screen.dart';
-import '../screens/settings/settings_screen.dart';
 import '../screens/donation/donation_screen.dart';
 
 class AppRoutes {
@@ -29,11 +26,11 @@ class AppRoutes {
         signup: (_) => const SignupScreen(),
         otp: (_) => const OtpScreen(),
         profileInit: (_) => const ProfileInitScreen(),
-        dashboard: (_) => const DashboardScreen(),
-        aiVision: (_) => const AiVisionScreen(),
-        projections: (_) => const ProjectionsScreen(),
+        dashboard: (_) => const MonolithShell(initialIndex: 0),
+        aiVision: (_) => const MonolithShell(initialIndex: 1),
+        projections: (_) => const MonolithShell(initialIndex: 2),
+        settings: (_) => const MonolithShell(initialIndex: 3),
         foodLog: (_) => const ManualFoodLogScreen(),
-        settings: (_) => const SettingsScreen(),
         donation: (_) => const DonationScreen(),
       };
 }

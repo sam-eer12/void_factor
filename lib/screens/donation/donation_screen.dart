@@ -241,23 +241,22 @@ class DonationScreen extends StatelessWidget {
                 ),
               ),
             ),
-
-            MonolithBottomNav(
-              currentIndex: 0,
-              onTap: (i) {
-                if (i == 0) {
-                  Navigator.pushReplacementNamed(context, '/dashboard');
-                } else if (i == 1) {
-                  Navigator.pushReplacementNamed(context, '/ai-vision');
-                } else if (i == 2) {
-                  Navigator.pushReplacementNamed(context, '/projections');
-                } else if (i == 3) {
-                  Navigator.pushReplacementNamed(context, '/settings');
-                }
-              },
-            ),
           ],
         ),
+      ),
+      bottomNavigationBar: MonolithBottomNav(
+        currentIndex: 0,
+        onTap: (i) {
+          if (i == 0) {
+            Navigator.pushReplacementNamed(context, '/dashboard');
+          } else if (i == 1) {
+            Navigator.pushReplacementNamed(context, '/ai-vision');
+          } else if (i == 2) {
+            Navigator.pushReplacementNamed(context, '/projections');
+          } else if (i == 3) {
+            Navigator.pushReplacementNamed(context, '/settings');
+          }
+        },
       ),
     );
   }

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
-import '../../widgets/monolith_bottom_nav.dart';
 import '../../widgets/monolith_drawer.dart';
+import 'monolith_shell.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -12,24 +12,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final int _currentNavIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-
-  void _onNavTap(int index) {
-    switch (index) {
-      case 0:
-        break; // Already on dashboard
-      case 1:
-        Navigator.pushNamed(context, '/ai-vision');
-        break;
-      case 2:
-        Navigator.pushNamed(context, '/projections');
-        break;
-      case 3:
-        Navigator.pushNamed(context, '/settings');
-        break;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,12 +22,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       drawer: MonolithDrawer(
         onProfileTap: () {
           Navigator.pop(context);
-          Navigator.pushNamed(context, '/settings');
+          MonolithShell.setActiveTab(context, 3, '/settings');
         },
         onDashboardTap: () => Navigator.pop(context),
         onAiModelsTap: () {
           Navigator.pop(context);
-          Navigator.pushNamed(context, '/ai-vision');
+          MonolithShell.setActiveTab(context, 1, '/ai-vision');
         },
         onHistoryTap: () {
           Navigator.pop(context);
@@ -87,7 +70,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     style: MonolithTheme.headlineLarge,
                   ),
                   GestureDetector(
-                    onTap: () => Navigator.pushNamed(context, '/settings'),
+                    onTap: () => MonolithShell.setActiveTab(context, 3, '/settings'),
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: MonolithTheme.containerDecoration,
@@ -180,7 +163,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           child: _buildQuickAction(
                             Icons.camera_alt,
                             'SCAN FOOD',
-                            () => Navigator.pushNamed(context, '/ai-vision'),
+                            () => MonolithShell.setActiveTab(context, 1, '/ai-vision'),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -200,8 +183,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           child: _buildQuickAction(
                             Icons.insights,
                             'PROJECTIONS',
-                            () =>
-                                Navigator.pushNamed(context, '/projections'),
+                            () => MonolithShell.setActiveTab(context, 2, '/projections'),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -218,12 +200,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
               ),
-            ),
-
-            // ── Bottom Nav ──
-            MonolithBottomNav(
-              currentIndex: _currentNavIndex,
-              onTap: _onNavTap,
             ),
           ],
         ),

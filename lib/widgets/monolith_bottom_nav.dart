@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../theme/monolith_theme.dart';
 
 class MonolithBottomNav extends StatelessWidget {
@@ -13,64 +14,40 @@ class MonolithBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(
-            color: MonolithTheme.primary,
-            width: MonolithTheme.borderWidth,
-          ),
+    return GlassTabBar.bottom(
+      tabs: const [
+        GlassTab(
+          icon: Icon(Icons.grid_view),
+          label: 'DASHBOARD',
         ),
-      ),
-      child: SafeArea(
-        child: SizedBox(
-          height: 64,
-          child: Row(
-            children: [
-              _buildNavItem(0, Icons.grid_view, 'DASHBOARD'),
-              _buildNavItem(1, Icons.center_focus_strong, 'VISION'),
-              _buildNavItem(2, Icons.insights, 'STATS'),
-              _buildNavItem(3, Icons.settings, 'CONFIG'),
-            ],
-          ),
+        GlassTab(
+          icon: Icon(Icons.center_focus_strong),
+          label: 'VISION',
         ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(int index, IconData icon, String label) {
-    final isSelected = currentIndex == index;
-
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => onTap(index),
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          color: isSelected ? MonolithTheme.primary : Colors.transparent,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 22,
-                color: isSelected
-                    ? MonolithTheme.surface
-                    : MonolithTheme.outline,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: MonolithTheme.labelSmall.copyWith(
-                  color: isSelected
-                      ? MonolithTheme.surface
-                      : MonolithTheme.outline,
-                ),
-              ),
-            ],
-          ),
+        GlassTab(
+          icon: Icon(Icons.insights),
+          label: 'STATS',
         ),
+        GlassTab(
+          icon: Icon(Icons.settings),
+          label: 'CONFIG',
+        ),
+      ],
+      selectedIndex: currentIndex,
+      onTabSelected: onTap,
+      barHeight: 54,
+      iconSize: 22,
+      labelFontSize: 10,
+      selectedIconColor: MonolithTheme.primary,
+      unselectedIconColor: MonolithTheme.outline,
+      selectedLabelColor: MonolithTheme.primary,
+      unselectedLabelColor: MonolithTheme.outline,
+      indicatorColor: MonolithTheme.primary.withValues(alpha: 0.15),
+      settings: const LiquidGlassSettings(
+        thickness: 35,
+        blur: 12,
+        refractiveIndex: 1.4,
+        glassColor: Colors.white12,
       ),
     );
   }

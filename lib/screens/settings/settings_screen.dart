@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_button.dart';
-import '../../widgets/monolith_bottom_nav.dart';
+import '../dashboard/monolith_shell.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -31,7 +31,7 @@ class SettingsScreen extends StatelessWidget {
               child: Row(
                 children: [
                   GestureDetector(
-                    onTap: () => Navigator.pop(context),
+                    onTap: () => MonolithShell.setActiveTab(context, 0, '/dashboard'),
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: MonolithTheme.containerDecoration,
@@ -225,19 +225,6 @@ class SettingsScreen extends StatelessWidget {
                   ],
                 ),
               ),
-            ),
-
-            MonolithBottomNav(
-              currentIndex: 3,
-              onTap: (i) {
-                if (i == 0) {
-                  Navigator.pushReplacementNamed(context, '/dashboard');
-                } else if (i == 1) {
-                  Navigator.pushReplacementNamed(context, '/ai-vision');
-                } else if (i == 2) {
-                  Navigator.pushReplacementNamed(context, '/projections');
-                }
-              },
             ),
           ],
         ),
