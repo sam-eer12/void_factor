@@ -9,8 +9,9 @@ class DonationScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: MonolithTheme.background,
-      body: SafeArea(
+       backgroundColor: MonolithTheme.background,
+       extendBody: true,
+       body: SafeArea(
         bottom: false,
         child: Column(
           children: [

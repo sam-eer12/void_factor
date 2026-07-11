@@ -10,6 +10,7 @@ class ManualFoodLogScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: MonolithTheme.background,
+      extendBody: true,
       body: SafeArea(
         bottom: false,
         child: Column(

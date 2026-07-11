@@ -69,6 +69,7 @@ class MonolithShellState extends State<MonolithShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: MonolithTheme.background,
+      extendBody: true,
       body: PageView(
         controller: _pageController,
         physics: const NeverScrollableScrollPhysics(),
