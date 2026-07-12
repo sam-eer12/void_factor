@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_drawer.dart';
+import '../../app/auth_provider.dart';
 import 'monolith_shell.dart';
 
-class DashboardScreen extends StatefulWidget {
+class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   Widget build(BuildContext context) {
+    final user = ref.watch(authStateProvider).value;
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: MonolithTheme.background,
@@ -33,8 +37,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Navigator.pop(context);
           Navigator.pushNamed(context, '/food-log');
         },
-        onLogoutTap: () {
-          Navigator.pushReplacementNamed(context, '/login');
+        onLogoutTap: () async {
+          await ref.read(authControllerProvider.notifier).signOut();
+          if (context.mounted) {
+            Navigator.pushReplacementNamed(context, '/login');
+          }
         },
       ),
       body: SafeArea(
@@ -72,10 +79,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   GestureDetector(
                     onTap: () => MonolithShell.setActiveTab(context, 3, '/settings'),
                     child: Container(
-                      padding: const EdgeInsets.all(8),
+                      width: 40,
+                      height: 40,
                       decoration: MonolithTheme.containerDecoration,
-                      child: const Icon(Icons.person,
-                          color: MonolithTheme.primary, size: 22),
+                      child: user?.photoURL != null
+                          ? Image.network(
+                              user!.photoURL!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => const Center(
+                                child: Icon(Icons.person,
+                                    color: MonolithTheme.primary, size: 22),
+                              ),
+                            )
+                          : const Center(
+                              child: Icon(Icons.person,
+                                  color: MonolithTheme.primary, size: 22),
+                            ),
                     ),
                   ),
                 ],
@@ -98,7 +117,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     Text(
-                      'USER',
+                      (user?.displayName ?? 'USER').toUpperCase(),
                       style: MonolithTheme.displayLarge,
                     ),
                     const SizedBox(height: 24),

@@ -71,19 +71,12 @@ class AuthController extends Notifier<SignupState> {
       password: password,
       otp: otp,
     );
-    // Print to console for development
-    print("====================================================");
-    print("DEVELOPMENT OTP FOR $email: $otp");
-    print("====================================================");
   }
 
   // Resend OTP
   void resendOtp() {
     final newOtp = generateOtp();
     state = state.copyWith(otp: newOtp);
-    print("====================================================");
-    print("DEVELOPMENT RESENT OTP FOR ${state.email}: $newOtp");
-    print("====================================================");
   }
 
   // Verify OTP and complete registration

@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_button.dart';
+import '../../app/auth_provider.dart';
 import '../dashboard/monolith_shell.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authStateProvider).value;
+
     return Scaffold(
       backgroundColor: MonolithTheme.background,
       body: SafeArea(
@@ -69,18 +73,28 @@ class SettingsScreen extends StatelessWidget {
                                 width: MonolithTheme.heroBorderWidth,
                               ),
                             ),
-                            child: const Icon(
-                              Icons.person,
-                              color: MonolithTheme.surface,
-                              size: 40,
-                            ),
+                            child: user?.photoURL != null
+                                ? Image.network(
+                                    user!.photoURL!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => const Icon(
+                                      Icons.person,
+                                      color: MonolithTheme.surface,
+                                      size: 40,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.person,
+                                    color: MonolithTheme.surface,
+                                    size: 40,
+                                  ),
                           ),
                           const SizedBox(height: 16),
-                          Text('USER_001',
+                          Text(user?.displayName ?? 'USER',
                               style: MonolithTheme.headlineLarge),
                           const SizedBox(height: 4),
                           Text(
-                            'user@monolith.ai',
+                            user?.email ?? 'user@monolith.ai',
                             style: MonolithTheme.bodyMedium.copyWith(
                               color: MonolithTheme.outline,
                             ),
