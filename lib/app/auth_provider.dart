@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'session_provider.dart';
 
 final authStateProvider = StreamProvider<User?>((ref) {
   return FirebaseAuth.instance.authStateChanges();
@@ -175,6 +176,7 @@ class AuthController extends Notifier<SignupState> {
   Future<void> signOut() async {
     await _auth.signOut();
     await GoogleSignIn.instance.signOut();
+    await ref.read(sessionServiceProvider).clearSession();
   }
 }
 

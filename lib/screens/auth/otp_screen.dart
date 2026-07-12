@@ -154,7 +154,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                         // ── Verify Button ──
                         if (authState.isLoading)
                           const Center(
-                            child: CircularProgressIndicator(color: MonolithTheme.primary),
+                            child: CircularProgressIndicator.adaptive(
+                              valueColor: AlwaysStoppedAnimation<Color>(MonolithTheme.primary),
+                            ),
                           )
                         else
                           MonolithButton(
@@ -176,7 +178,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                               if (success) {
                                 Navigator.pushNamedAndRemoveUntil(
                                   context,
-                                  '/profile-init',
+                                  '/',
                                   (route) => false,
                                 );
                               } else {

@@ -4,6 +4,7 @@ import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_button.dart';
 import '../../app/auth_provider.dart';
+import '../../app/session_provider.dart';
 import '../dashboard/monolith_shell.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -12,6 +13,7 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authStateProvider).value;
+    final profileAsync = ref.watch(profileProvider);
 
     return Scaffold(
       backgroundColor: MonolithTheme.background,
@@ -105,24 +107,59 @@ class SettingsScreen extends ConsumerWidget {
                             color: MonolithTheme.primary,
                           ),
                           const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.spaceAround,
-                            children: [
-                              _buildProfileStat('HEIGHT', '175 CM'),
-                              Container(
-                                width: MonolithTheme.borderWidth,
+                          profileAsync.when(
+                            data: (profile) {
+                              final height = profile['height'] ?? '0';
+                              final weight = profile['weight'] ?? '0';
+                              final age = profile['age'] ?? '0';
+                              return Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceAround,
+                                children: [
+                                  _buildProfileStat('HEIGHT', '$height CM'),
+                                  Container(
+                                    width: MonolithTheme.borderWidth,
+                                    height: 40,
+                                    color: MonolithTheme.primary,
+                                  ),
+                                  _buildProfileStat('WEIGHT', '$weight KG'),
+                                  Container(
+                                    width: MonolithTheme.borderWidth,
+                                    height: 40,
+                                    color: MonolithTheme.primary,
+                                  ),
+                                  _buildProfileStat('AGE', age),
+                                ],
+                              );
+                            },
+                            loading: () => const Center(
+                              child: SizedBox(
                                 height: 40,
-                                color: MonolithTheme.primary,
+                                width: 40,
+                                child: CircularProgressIndicator.adaptive(
+                                  valueColor: AlwaysStoppedAnimation<Color>(MonolithTheme.primary),
+                                ),
                               ),
-                              _buildProfileStat('WEIGHT', '70 KG'),
-                              Container(
-                                width: MonolithTheme.borderWidth,
-                                height: 40,
-                                color: MonolithTheme.primary,
-                              ),
-                              _buildProfileStat('AGE', '25'),
-                            ],
+                            ),
+                            error: (e, s) => Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceAround,
+                              children: [
+                                _buildProfileStat('HEIGHT', '-- CM'),
+                                Container(
+                                  width: MonolithTheme.borderWidth,
+                                  height: 40,
+                                  color: MonolithTheme.primary,
+                                ),
+                                _buildProfileStat('WEIGHT', '-- KG'),
+                                Container(
+                                  width: MonolithTheme.borderWidth,
+                                  height: 40,
+                                  color: MonolithTheme.primary,
+                                ),
+                                _buildProfileStat('AGE', '--'),
+                              ],
+                            ),
                           ),
                         ],
                       ),

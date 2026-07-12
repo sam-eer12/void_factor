@@ -14,7 +14,7 @@ class MonolithApp extends StatelessWidget {
         title: 'void_factor',
         debugShowCheckedModeBanner: false,
         theme: MonolithTheme.themeData,
-        initialRoute: AppRoutes.login,
+        initialRoute: AppRoutes.authGate,
         routes: AppRoutes.routes,
       ),
     );

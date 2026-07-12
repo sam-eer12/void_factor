@@ -111,7 +111,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               // ── Login Button & Google Sign-In ──
               if (authState.isLoading)
                 const Center(
-                  child: CircularProgressIndicator(color: MonolithTheme.primary),
+                  child: CircularProgressIndicator.adaptive(
+                    valueColor: AlwaysStoppedAnimation<Color>(MonolithTheme.primary),
+                  ),
                 )
               else ...[
                 MonolithButton(
@@ -130,7 +132,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         .signInWithEmail(email, password);
                     if (!context.mounted) return;
                     if (user != null) {
-                      Navigator.pushReplacementNamed(context, '/dashboard');
+                      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
                     } else {
                       final error = ref.read(authControllerProvider).error;
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -150,7 +152,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         .signInWithGoogle();
                     if (!context.mounted) return;
                     if (user != null) {
-                      Navigator.pushReplacementNamed(context, '/dashboard');
+                      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
                     } else {
                       final error = ref.read(authControllerProvider).error;
                       if (error != null) {
