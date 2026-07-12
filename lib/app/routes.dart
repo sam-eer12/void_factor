@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/auth/signup_screen.dart';
-import '../screens/auth/otp_screen.dart';
+import '../screens/auth/verify_link_screen.dart';
 import '../screens/auth/auth_gate.dart';
 import '../screens/onboarding/profile_init_screen.dart';
 import '../screens/dashboard/monolith_shell.dart';
@@ -14,7 +14,7 @@ class AppRoutes {
   static const String authGate = '/';
   static const String login = '/login';
   static const String signup = '/signup';
-  static const String otp = '/otp';
+  static const String verifyLink = '/verify-link';
   static const String profileInit = '/profile-init';
   static const String dashboard = '/dashboard';
   static const String aiVision = '/ai-vision';
@@ -27,7 +27,7 @@ class AppRoutes {
         authGate: (_) => const AuthGate(),
         login: (_) => const LoginScreen(),
         signup: (_) => const SignupScreen(),
-        otp: (_) => const OtpScreen(),
+        verifyLink: (_) => const VerifyLinkScreen(),
         profileInit: (_) => const ProfileInitScreen(),
         dashboard: (_) => const MonolithShell(initialIndex: 0),
         aiVision: (_) => const MonolithShell(initialIndex: 1),

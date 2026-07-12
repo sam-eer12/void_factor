@@ -16,6 +16,26 @@ class MonolithApp extends StatelessWidget {
         theme: MonolithTheme.themeData,
         initialRoute: AppRoutes.authGate,
         routes: AppRoutes.routes,
+        builder: (context, child) {
+          return Listener(
+            onPointerDown: (event) {
+              final focus = FocusManager.instance.primaryFocus;
+              if (focus != null && focus.context != null) {
+                final RenderBox? renderBox =
+                    focus.context!.findRenderObject() as RenderBox?;
+                if (renderBox != null) {
+                  final position = renderBox.localToGlobal(Offset.zero);
+                  final size = renderBox.size;
+                  final rect = position & size;
+                  if (!rect.contains(event.position)) {
+                    focus.unfocus();
+                  }
+                }
+              }
+            },
+            child: child,
+          );
+        },
       ),
     );
   }

@@ -1,40 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_button.dart';
+import '../../widgets/monolith_text_field.dart';
 import '../../app/auth_provider.dart';
 
-class OtpScreen extends ConsumerStatefulWidget {
-  const OtpScreen({super.key});
+class VerifyLinkScreen extends ConsumerStatefulWidget {
+  const VerifyLinkScreen({super.key});
 
   @override
-  ConsumerState<OtpScreen> createState() => _OtpScreenState();
+  ConsumerState<VerifyLinkScreen> createState() => _VerifyLinkScreenState();
 }
 
-class _OtpScreenState extends ConsumerState<OtpScreen> {
-  final List<TextEditingController> _controllers =
-      List.generate(6, (_) => TextEditingController());
-  final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
+class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
+  final _linkController = TextEditingController();
 
   @override
   void dispose() {
-    for (final c in _controllers) {
-      c.dispose();
-    }
-    for (final f in _focusNodes) {
-      f.dispose();
-    }
+    _linkController.dispose();
     super.dispose();
-  }
-
-  void _onOtpChanged(String value, int index) {
-    if (value.isNotEmpty && index < 5) {
-      _focusNodes[index + 1].requestFocus();
-    }
-    if (value.isEmpty && index > 0) {
-      _focusNodes[index - 1].requestFocus();
-    }
   }
 
   @override
@@ -74,14 +58,14 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                         ),
                         const SizedBox(height: 40),
 
-                        // ── MONOLITH Logo ──
+                        // ── MONOLITH Branding ──
                         Text(
                           'MONOLITH',
                           style: MonolithTheme.displayLarge,
                         ),
                         const SizedBox(height: 32),
 
-                        // ── Verify Identity Heading ──
+                        // ── Check Mailbox Heading ──
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(20),
@@ -90,14 +74,14 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'VERIFY IDENTITY',
+                                'CHECK MAILBOX',
                                 style: MonolithTheme.headlineLarge.copyWith(
                                   color: MonolithTheme.surface,
                                 ),
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Enter the 6-digit code sent to your email.',
+                                'We have dispatched a secure authentication link to your email.',
                                 style: MonolithTheme.bodyMedium.copyWith(
                                   color: MonolithTheme.surfaceContainerHigh,
                                 ),
@@ -107,47 +91,12 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                         ),
                         const SizedBox(height: 40),
 
-                        // ── OTP Input ──
-                        Text(
-                          'VERIFICATION CODE',
-                          style: MonolithTheme.labelMedium,
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: List.generate(6, (index) {
-                            return SizedBox(
-                              width: 48,
-                              height: 56,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: MonolithTheme.primary,
-                                    width: MonolithTheme.borderWidth,
-                                  ),
-                                  boxShadow: MonolithTheme.smallHardShadow,
-                                  color: MonolithTheme.surface,
-                                ),
-                                child: TextField(
-                                  controller: _controllers[index],
-                                  focusNode: _focusNodes[index],
-                                  textAlign: TextAlign.center,
-                                  keyboardType: TextInputType.number,
-                                  maxLength: 1,
-                                  style: MonolithTheme.headlineLarge,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly,
-                                  ],
-                                  decoration: const InputDecoration(
-                                    counterText: '',
-                                    border: InputBorder.none,
-                                    contentPadding: EdgeInsets.zero,
-                                  ),
-                                  onChanged: (v) => _onOtpChanged(v, index),
-                                ),
-                              ),
-                            );
-                          }),
+                        // ── Paste Link Field ──
+                        MonolithTextField(
+                          label: 'PASTE AUTHENTICATION LINK',
+                          hint: 'https://signinpractice-bfade.firebaseapp.com/__/auth/...',
+                          controller: _linkController,
+                          keyboardType: TextInputType.url,
                         ),
                         const SizedBox(height: 40),
 
@@ -160,22 +109,22 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                           )
                         else
                           MonolithButton(
-                            label: 'VERIFY IDENTITY',
+                            label: 'COMPLETE ACCESS',
                             onPressed: () async {
-                              final enteredOtp = _controllers.map((c) => c.text).join();
-                              if (enteredOtp.length < 6) {
+                              final link = _linkController.text.trim();
+                              if (link.isEmpty) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Please enter all 6 digits')),
+                                  const SnackBar(content: Text('Please paste the email link to sign in')),
                                 );
                                 return;
                               }
 
-                              final success = await ref
+                              final user = await ref
                                   .read(authControllerProvider.notifier)
-                                  .verifyOtpAndSignup(enteredOtp);
+                                  .signInWithLink(link);
 
                               if (!context.mounted) return;
-                              if (success) {
+                              if (user != null) {
                                 Navigator.pushNamedAndRemoveUntil(
                                   context,
                                   '/',
@@ -184,30 +133,43 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                               } else {
                                 final error = ref.read(authControllerProvider).error;
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(error ?? 'Verification failed')),
+                                  SnackBar(content: Text(error ?? 'Authentication failed')),
                                 );
                               }
                             },
                           ),
                         const SizedBox(height: 24),
 
-                        // ── Resend ──
+                        // ── Resend Link ──
                         Center(
                           child: GestureDetector(
-                            onTap: () {
-                              ref.read(authControllerProvider.notifier).resendOtp();
-                              final newOtp = ref.read(authControllerProvider).otp;
+                            onTap: () async {
+                              final email = authState.email;
+                              if (email.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Could not resend. Go back and enter your email again.')),
+                                );
+                                return;
+                              }
 
-                              // Show code to help user test
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Verification code resent. Code: $newOtp'),
-                                  duration: const Duration(seconds: 5),
-                                ),
-                              );
+                              final success = await ref
+                                  .read(authControllerProvider.notifier)
+                                  .sendPasswordlessLink(email, name: authState.name);
+
+                              if (!context.mounted) return;
+                              if (success) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Verification link resent successfully.')),
+                                );
+                              } else {
+                                final error = ref.read(authControllerProvider).error;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(error ?? 'Failed to resend link')),
+                                );
+                              }
                             },
                             child: Text(
-                              'RESEND CODE',
+                              'RESEND LINK',
                               style: MonolithTheme.labelMedium.copyWith(
                                 decoration: TextDecoration.underline,
                                 decorationThickness: 2,
@@ -217,19 +179,6 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                         ),
 
                         const Spacer(),
-
-                        // ── Timer ──
-                        Center(
-                          child: Container(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: MonolithTheme.containerDecoration,
-                            child: Text(
-                              'EXPIRES IN 04:59',
-                              style: MonolithTheme.labelMedium,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),

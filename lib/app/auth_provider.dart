@@ -1,7 +1,7 @@
-import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'session_provider.dart';
 
 final authStateProvider = StreamProvider<User?>((ref) {
@@ -11,35 +11,31 @@ final authStateProvider = StreamProvider<User?>((ref) {
 class SignupState {
   final String name;
   final String email;
-  final String password;
-  final String otp;
   final String? error;
   final bool isLoading;
+  final bool isLinkSent;
 
   SignupState({
     this.name = '',
     this.email = '',
-    this.password = '',
-    this.otp = '',
     this.error,
     this.isLoading = false,
+    this.isLinkSent = false,
   });
 
   SignupState copyWith({
     String? name,
     String? email,
-    String? password,
-    String? otp,
     String? error,
     bool? isLoading,
+    bool? isLinkSent,
   }) {
     return SignupState(
       name: name ?? this.name,
       email: email ?? this.email,
-      password: password ?? this.password,
-      otp: otp ?? this.otp,
       error: error,
       isLoading: isLoading ?? this.isLoading,
+      isLinkSent: isLinkSent ?? this.isLinkSent,
     );
   }
 }
@@ -52,60 +48,43 @@ class AuthController extends Notifier<SignupState> {
     return SignupState();
   }
 
-  // Generate 6-digit OTP
-  String generateOtp() {
-    final rand = Random();
-    final otpVal = 100000 + rand.nextInt(900000);
-    return otpVal.toString();
-  }
-
-  // Start Signup flow (generate OTP, save temporary signup details)
-  void initiateSignup({
-    required String name,
-    required String email,
-    required String password,
-  }) {
-    final otp = generateOtp();
-    state = SignupState(
-      name: name,
-      email: email,
-      password: password,
-      otp: otp,
-    );
-  }
-
-  // Resend OTP
-  void resendOtp() {
-    final newOtp = generateOtp();
-    state = state.copyWith(otp: newOtp);
-  }
-
-  // Verify OTP and complete registration
-  Future<bool> verifyOtpAndSignup(String enteredOtp) async {
-    if (enteredOtp != state.otp) {
-      state = state.copyWith(error: "Invalid verification code.");
-      return false;
-    }
-
+  // Send Passwordless Email Sign-in/Sign-up Link
+  Future<bool> sendPasswordlessLink(String email, {String? name}) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      // Create user in Firebase
-      final UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
-        email: state.email,
-        password: state.password,
+      final actionCodeSettings = ActionCodeSettings(
+        url: 'https://signinpractice-bfade.firebaseapp.com',
+        handleCodeInApp: true,
+        androidPackageName: 'com.example.firebase_prac_proj',
+        androidMinimumVersion: '1',
+        androidInstallApp: true,
+        iOSBundleId: 'com.example.firebase_prac_proj',
       );
 
-      // Update user profile display name
-      if (userCredential.user != null) {
-        await userCredential.user!.updateDisplayName(state.name);
+      await _auth.sendSignInLinkToEmail(
+        email: email,
+        actionCodeSettings: actionCodeSettings,
+      );
+
+      // Save email and optional name to secure storage
+      const secureStorage = FlutterSecureStorage();
+      await secureStorage.write(key: 'email_for_signin', value: email);
+      if (name != null && name.isNotEmpty) {
+        await secureStorage.write(key: 'name_for_signin', value: name);
+      } else {
+        await secureStorage.delete(key: 'name_for_signin');
       }
 
-      state = SignupState(); // Reset signup state on success
+      state = SignupState(
+        email: email,
+        name: name ?? '',
+        isLinkSent: true,
+      );
       return true;
     } on FirebaseAuthException catch (e) {
       state = state.copyWith(
         isLoading: false,
-        error: e.message ?? "Registration failed. Please try again.",
+        error: e.message ?? "Failed to send verification link.",
       );
       return false;
     } catch (e) {
@@ -117,16 +96,39 @@ class AuthController extends Notifier<SignupState> {
     }
   }
 
-  // Email/Password login
-  Future<User?> signInWithEmail(String email, String password) async {
+  // Verify and complete Passwordless sign-in with the clicked/pasted link
+  Future<User?> signInWithLink(String emailLink) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final UserCredential userCredential = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
+      const secureStorage = FlutterSecureStorage();
+      final savedEmail = await secureStorage.read(key: 'email_for_signin');
+      if (savedEmail == null || savedEmail.isEmpty) {
+        throw Exception("No email found to complete sign-in. Please ensure you are signing in from the same device or re-request the link.");
+      }
+
+      if (!_auth.isSignInWithEmailLink(emailLink)) {
+        throw Exception("The provided link is not a valid Firebase sign-in link.");
+      }
+
+      final UserCredential userCredential = await _auth.signInWithEmailLink(
+        email: savedEmail,
+        emailLink: emailLink,
       );
+
+      final user = userCredential.user;
+      if (user != null) {
+        final savedName = await secureStorage.read(key: 'name_for_signin');
+        if (savedName != null && savedName.isNotEmpty) {
+          await user.updateDisplayName(savedName);
+        }
+      }
+
+      // Clear temporary auth data
+      await secureStorage.delete(key: 'email_for_signin');
+      await secureStorage.delete(key: 'name_for_signin');
+
       state = SignupState();
-      return userCredential.user;
+      return user;
     } on FirebaseAuthException catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -146,7 +148,6 @@ class AuthController extends Notifier<SignupState> {
   Future<User?> signInWithGoogle() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      // Initialize the plugin if required
       await GoogleSignIn.instance.initialize();
       final googleUser = await GoogleSignIn.instance.authenticate();
       final googleAuth = googleUser.authentication;
@@ -183,3 +184,4 @@ class AuthController extends Notifier<SignupState> {
 final authControllerProvider = NotifierProvider<AuthController, SignupState>(() {
   return AuthController();
 });
+

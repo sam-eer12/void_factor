@@ -15,22 +15,18 @@ class SignupScreen extends ConsumerStatefulWidget {
 class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
-  bool _obscurePassword = true;
-  bool _obscureConfirm = true;
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authControllerProvider);
+
     return Scaffold(
       backgroundColor: MonolithTheme.background,
       body: SafeArea(
@@ -105,147 +101,44 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
               ),
-              const SizedBox(height: 20),
-
-              // ── Password ──
-              MonolithTextField(
-                label: 'Password',
-                hint: '••••••••',
-                controller: _passwordController,
-                obscureText: _obscurePassword,
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscurePassword
-                        ? Icons.visibility_off
-                        : Icons.visibility,
-                    color: MonolithTheme.primary,
-                  ),
-                  onPressed: () {
-                    setState(() => _obscurePassword = !_obscurePassword);
-                  },
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // ── Confirm Password ──
-              MonolithTextField(
-                label: 'Confirm Password',
-                hint: '••••••••',
-                controller: _confirmPasswordController,
-                obscureText: _obscureConfirm,
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscureConfirm
-                        ? Icons.visibility_off
-                        : Icons.visibility,
-                    color: MonolithTheme.primary,
-                  ),
-                  onPressed: () {
-                    setState(() => _obscureConfirm = !_obscureConfirm);
-                  },
-                ),
-              ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 40),
 
               // ── Initialize Button ──
-              MonolithButton(
-                label: 'INITIALIZE',
-                onPressed: () {
-                  final name = _nameController.text.trim();
-                  final email = _emailController.text.trim();
-                  final password = _passwordController.text;
-                  final confirmPassword = _confirmPasswordController.text;
+              if (authState.isLoading)
+                const Center(
+                  child: CircularProgressIndicator.adaptive(
+                    valueColor: AlwaysStoppedAnimation<Color>(MonolithTheme.primary),
+                  ),
+                )
+              else
+                MonolithButton(
+                  label: 'SEND SIGN UP LINK',
+                  onPressed: () async {
+                    final name = _nameController.text.trim();
+                    final email = _emailController.text.trim();
 
-                  if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please fill all fields')),
-                    );
-                    return;
-                  }
+                    if (name.isEmpty || email.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please fill all fields')),
+                      );
+                      return;
+                    }
 
-                  if (password != confirmPassword) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Passwords do not match')),
-                    );
-                    return;
-                  }
+                    final success = await ref
+                        .read(authControllerProvider.notifier)
+                        .sendPasswordlessLink(email, name: name);
 
-                  if (password.length < 6) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Password must be at least 6 characters')),
-                    );
-                    return;
-                  }
-
-                  // Start verification
-                  ref.read(authControllerProvider.notifier).initiateSignup(
-                    name: name,
-                    email: email,
-                    password: password,
-                  );
-
-                  // Retrieve the generated OTP from state
-                  final generatedOtp = ref.read(authControllerProvider).otp;
-
-                  // Show verification HUD/Dialog so the user can easily see the code
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (dialogContext) => AlertDialog(
-                      backgroundColor: MonolithTheme.surface,
-                      shape: const RoundedRectangleBorder(
-                        side: BorderSide(color: MonolithTheme.primary, width: 2),
-                      ),
-                      title: Text(
-                        'IDENTITY VERIFICATION CODE',
-                        style: MonolithTheme.headlineMedium,
-                      ),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'A verification code has been generated for $email.',
-                            style: MonolithTheme.bodyMedium,
-                          ),
-                          const SizedBox(height: 16),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            color: MonolithTheme.primary,
-                            child: Center(
-                              child: Text(
-                                generatedOtp,
-                                style: MonolithTheme.headlineLarge.copyWith(
-                                  color: MonolithTheme.surface,
-                                  letterSpacing: 8,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Enter this code on the next screen to verify and activate your node.',
-                            style: MonolithTheme.labelSmall.copyWith(color: MonolithTheme.outline),
-                          ),
-                        ],
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () {
-                            Navigator.pop(dialogContext); // Close dialog
-                            Navigator.pushNamed(context, '/otp'); // Navigate to OTP screen
-                          },
-                          child: Text(
-                            'PROCEED',
-                            style: MonolithTheme.labelLarge,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+                    if (!context.mounted) return;
+                    if (success) {
+                      Navigator.pushNamed(context, '/verify-link');
+                    } else {
+                      final error = ref.read(authControllerProvider).error;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(error ?? 'Failed to send sign up link')),
+                      );
+                    }
+                  },
+                ),
               const SizedBox(height: 24),
 
               // ── Already a user ──

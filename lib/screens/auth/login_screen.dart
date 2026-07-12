@@ -14,13 +14,10 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _obscurePassword = true;
 
   @override
   void dispose() {
     _emailController.dispose();
-    _passwordController.dispose();
     super.dispose();
   }
 
@@ -70,42 +67,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
               ),
-              const SizedBox(height: 24),
-
-              // ── Password Field ──
-              MonolithTextField(
-                label: 'Password',
-                hint: '••••••••',
-                controller: _passwordController,
-                obscureText: _obscurePassword,
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscurePassword
-                        ? Icons.visibility_off
-                        : Icons.visibility,
-                    color: MonolithTheme.primary,
-                  ),
-                  onPressed: () {
-                    setState(() => _obscurePassword = !_obscurePassword);
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // ── Forgot Password ──
-              Align(
-                alignment: Alignment.centerRight,
-                child: GestureDetector(
-                  onTap: () {},
-                  child: Text(
-                    'FORGOT PASSWORD?',
-                    style: MonolithTheme.labelMedium.copyWith(
-                      decoration: TextDecoration.underline,
-                      decorationThickness: 2,
-                    ),
-                  ),
-                ),
-              ),
               const SizedBox(height: 40),
 
               // ── Login Button & Google Sign-In ──
@@ -117,26 +78,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 )
               else ...[
                 MonolithButton(
-                  label: 'ACCESS SYSTEM',
+                  label: 'SEND SIGN IN LINK',
                   onPressed: () async {
                     final email = _emailController.text.trim();
-                    final password = _passwordController.text;
-                    if (email.isEmpty || password.isEmpty) {
+                    if (email.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Please fill all fields')),
+                        const SnackBar(content: Text('Please enter your email')),
                       );
                       return;
                     }
-                    final user = await ref
+                    final success = await ref
                         .read(authControllerProvider.notifier)
-                        .signInWithEmail(email, password);
+                        .sendPasswordlessLink(email);
                     if (!context.mounted) return;
-                    if (user != null) {
-                      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+                    if (success) {
+                      Navigator.pushNamed(context, '/verify-link');
                     } else {
                       final error = ref.read(authControllerProvider).error;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(error ?? 'Login failed')),
+                        SnackBar(content: Text(error ?? 'Failed to send login link')),
                       );
                     }
                   },
