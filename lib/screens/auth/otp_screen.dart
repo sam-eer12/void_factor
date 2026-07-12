@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_button.dart';
+import '../../app/auth_provider.dart';
 
-class OtpScreen extends StatefulWidget {
+class OtpScreen extends ConsumerStatefulWidget {
   const OtpScreen({super.key});
 
   @override
-  State<OtpScreen> createState() => _OtpScreenState();
+  ConsumerState<OtpScreen> createState() => _OtpScreenState();
 }
 
-class _OtpScreenState extends State<OtpScreen> {
+class _OtpScreenState extends ConsumerState<OtpScreen> {
   final List<TextEditingController> _controllers =
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
@@ -37,6 +39,8 @@ class _OtpScreenState extends State<OtpScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authControllerProvider);
+
     return Scaffold(
       backgroundColor: MonolithTheme.background,
       body: SafeArea(
@@ -65,9 +69,9 @@ class _OtpScreenState extends State<OtpScreen> {
                               Icons.arrow_back,
                               color: MonolithTheme.primary,
                               size: 20,
-                              ),
                             ),
                           ),
+                        ),
                         const SizedBox(height: 40),
 
                         // ── MONOLITH Logo ──
@@ -148,18 +152,58 @@ class _OtpScreenState extends State<OtpScreen> {
                         const SizedBox(height: 40),
 
                         // ── Verify Button ──
-                        MonolithButton(
-                          label: 'VERIFY IDENTITY',
-                          onPressed: () {
-                            Navigator.pushNamed(context, '/profile-init');
-                          },
-                        ),
+                        if (authState.isLoading)
+                          const Center(
+                            child: CircularProgressIndicator(color: MonolithTheme.primary),
+                          )
+                        else
+                          MonolithButton(
+                            label: 'VERIFY IDENTITY',
+                            onPressed: () async {
+                              final enteredOtp = _controllers.map((c) => c.text).join();
+                              if (enteredOtp.length < 6) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Please enter all 6 digits')),
+                                );
+                                return;
+                              }
+
+                              final success = await ref
+                                  .read(authControllerProvider.notifier)
+                                  .verifyOtpAndSignup(enteredOtp);
+
+                              if (!context.mounted) return;
+                              if (success) {
+                                Navigator.pushNamedAndRemoveUntil(
+                                  context,
+                                  '/profile-init',
+                                  (route) => false,
+                                );
+                              } else {
+                                final error = ref.read(authControllerProvider).error;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(error ?? 'Verification failed')),
+                                );
+                              }
+                            },
+                          ),
                         const SizedBox(height: 24),
 
                         // ── Resend ──
                         Center(
                           child: GestureDetector(
-                            onTap: () {},
+                            onTap: () {
+                              ref.read(authControllerProvider.notifier).resendOtp();
+                              final newOtp = ref.read(authControllerProvider).otp;
+
+                              // Show code to help user test
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Verification code resent. Code: $newOtp'),
+                                  duration: const Duration(seconds: 5),
+                                ),
+                              );
+                            },
                             child: Text(
                               'RESEND CODE',
                               style: MonolithTheme.labelMedium.copyWith(

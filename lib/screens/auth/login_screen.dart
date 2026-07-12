@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_button.dart';
 import '../../widgets/monolith_text_field.dart';
+import '../../app/auth_provider.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
@@ -24,6 +26,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authControllerProvider);
+
     return Scaffold(
       backgroundColor: MonolithTheme.background,
       body: SafeArea(
@@ -104,13 +108,60 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 40),
 
-              // ── Login Button ──
-              MonolithButton(
-                label: 'ACCESS SYSTEM',
-                onPressed: () {
-                  Navigator.pushReplacementNamed(context, '/dashboard');
-                },
-              ),
+              // ── Login Button & Google Sign-In ──
+              if (authState.isLoading)
+                const Center(
+                  child: CircularProgressIndicator(color: MonolithTheme.primary),
+                )
+              else ...[
+                MonolithButton(
+                  label: 'ACCESS SYSTEM',
+                  onPressed: () async {
+                    final email = _emailController.text.trim();
+                    final password = _passwordController.text;
+                    if (email.isEmpty || password.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please fill all fields')),
+                      );
+                      return;
+                    }
+                    final user = await ref
+                        .read(authControllerProvider.notifier)
+                        .signInWithEmail(email, password);
+                    if (!context.mounted) return;
+                    if (user != null) {
+                      Navigator.pushReplacementNamed(context, '/dashboard');
+                    } else {
+                      final error = ref.read(authControllerProvider).error;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(error ?? 'Login failed')),
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+                MonolithButton(
+                  label: 'SIGN IN WITH GOOGLE',
+                  style: MonolithButtonStyle.secondary,
+                  icon: Icons.login_outlined,
+                  onPressed: () async {
+                    final user = await ref
+                        .read(authControllerProvider.notifier)
+                        .signInWithGoogle();
+                    if (!context.mounted) return;
+                    if (user != null) {
+                      Navigator.pushReplacementNamed(context, '/dashboard');
+                    } else {
+                      final error = ref.read(authControllerProvider).error;
+                      if (error != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(error)),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ],
               const SizedBox(height: 24),
 
               // ── Divider ──
