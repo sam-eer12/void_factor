@@ -70,13 +70,45 @@ class SessionService {
     final uid = currentUser.uid;
     final now = DateTime.now();
 
-    // Check last activity time
+    try {
+      // 1. Verify user ID is still valid from Firebase Auth
+      await currentUser.reload();
+    } catch (e) {
+      // User is no longer valid (e.g., deleted, disabled)
+      await clearSession();
+      return 'login';
+    }
+
+    // 2. Fetch the user profile and session ID from Firestore
+    DocumentSnapshot<Map<String, dynamic>> doc;
+    try {
+      doc = await _db.collection('users').doc(uid).get().timeout(const Duration(seconds: 15));
+    } catch (e) {
+      // Network error or fetch failed, fallback to local caching if valid
+      final localProfileCompleted = await _secureStorage.read(key: _profileCompletedKey);
+      if (localProfileCompleted == 'true') {
+        return 'dashboard';
+      }
+      return 'onboarding';
+    }
+
+    if (!doc.exists) {
+      return 'onboarding';
+    }
+
+    final profile = doc.data();
+    if (profile == null) {
+      return 'onboarding';
+    }
+
+    // 3. Verify session ID from Firestore
+    final remoteSessionId = profile['sessionId'] as String?;
+    final localSessionId = await _secureStorage.read(key: _sessionIdKey);
     final lastActivityStr = await _secureStorage.read(key: _lastActivityKey);
-    final sessionId = await _secureStorage.read(key: _sessionIdKey);
 
     bool needNewSession = false;
 
-    if (sessionId == null || lastActivityStr == null) {
+    if (localSessionId == null || lastActivityStr == null) {
       needNewSession = true;
     } else {
       final lastActivity = DateTime.tryParse(lastActivityStr);
@@ -85,49 +117,38 @@ class SessionService {
       } else {
         final difference = now.difference(lastActivity).inDays;
         if (difference >= 30) {
-          // 30 days of inactivity expiry
           needNewSession = true;
         }
       }
     }
 
     if (needNewSession) {
-      // Automatically regenerate a new session ID
+      // Generate a new session ID
       final newSessionId = _generateSessionId();
       await _secureStorage.write(key: _sessionIdKey, value: newSessionId);
       await _secureStorage.write(key: _lastActivityKey, value: now.toIso8601String());
+
+      // Update Firestore with the new session ID
+      await _db.collection('users').doc(uid).update({'sessionId': newSessionId});
     } else {
-      // Session is active and valid, update the last activity time to current time (renew inactivity)
+      // Local session exists. Check if it matches the remote session ID
+      if (remoteSessionId == null || remoteSessionId != localSessionId) {
+        // Session mismatch: session has been invalidated or logged in from another device
+        await clearSession();
+        return 'login';
+      }
+      // Renew inactivity timer locally
       await _secureStorage.write(key: _lastActivityKey, value: now.toIso8601String());
     }
 
-    // Now check if onboarding is complete
-    final localProfileCompleted = await _secureStorage.read(key: _profileCompletedKey);
-    if (localProfileCompleted == 'true') {
-      return 'dashboard';
-    }
+    // Cache profile metrics locally
+    await _secureStorage.write(key: 'height', value: profile['height']?.toString() ?? '0');
+    await _secureStorage.write(key: 'weight', value: profile['weight']?.toString() ?? '0');
+    await _secureStorage.write(key: 'age', value: profile['age']?.toString() ?? '0');
+    await _secureStorage.write(key: 'gender', value: profile['gender']?.toString() ?? 'MALE');
+    await _secureStorage.write(key: _profileCompletedKey, value: 'true');
 
-    // Check remote Firestore
-    try {
-      final doc = await _db.collection('users').doc(uid).get().timeout(const Duration(seconds: 15));
-      if (doc.exists) {
-        final profile = doc.data();
-        if (profile != null) {
-          await _secureStorage.write(key: 'height', value: profile['height']?.toString() ?? '0');
-          await _secureStorage.write(key: 'weight', value: profile['weight']?.toString() ?? '0');
-          await _secureStorage.write(key: 'age', value: profile['age']?.toString() ?? '0');
-          await _secureStorage.write(key: 'gender', value: profile['gender']?.toString() ?? 'MALE');
-        }
-        // Profile exists! Cache it locally
-        await _secureStorage.write(key: _profileCompletedKey, value: 'true');
-        return 'dashboard';
-      } else {
-        return 'onboarding';
-      }
-    } catch (e) {
-      // Profile doesn't exist or error fetching
-      return 'onboarding';
-    }
+    return 'dashboard';
   }
 
   // Save onboarding details to Firebase Storage, generate session ID and mark completed
@@ -143,15 +164,19 @@ class SessionService {
     if (currentUser == null) throw Exception('No authenticated user');
 
     final uid = currentUser.uid;
+    final newSessionId = _generateSessionId();
+    final now = DateTime.now();
+
     final profileData = {
       'height': height,
       'weight': weight,
       'age': age,
       'gender': gender,
-      'createdAt': DateTime.now().toIso8601String(),
+      'sessionId': newSessionId,
+      'createdAt': now.toIso8601String(),
     };
 
-    // 1. Save to Cloud Firestore (excluding the API Key)
+    // 1. Save to Cloud Firestore
     await _db.collection('users').doc(uid).set(profileData).timeout(const Duration(seconds: 15));
 
     // 2. Save details locally
@@ -162,9 +187,7 @@ class SessionService {
     await _secureStorage.write(key: 'api_key', value: apiKey);
     await _secureStorage.write(key: 'api_provider', value: apiProvider);
 
-    // 3. Generate a new session ID and save it locally
-    final newSessionId = _generateSessionId();
-    final now = DateTime.now();
+    // 3. Save session ID locally
     await _secureStorage.write(key: _sessionIdKey, value: newSessionId);
     await _secureStorage.write(key: _lastActivityKey, value: now.toIso8601String());
 
