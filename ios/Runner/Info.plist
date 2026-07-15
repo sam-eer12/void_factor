@@ -76,6 +76,16 @@
 				<string>com.googleusercontent.apps.286425881714-70lkul9ktqgfdhfe15kic37tf5ger3q1</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.voidfactor.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.voidfactor.app</string>
+			</array>
+		</dict>
 	</array>
 	<key>GIDClientID</key>
 	<string>286425881714-70lkul9ktqgfdhfe15kic37tf5ger3q1.apps.googleusercontent.com</string>

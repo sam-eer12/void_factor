@@ -48,17 +48,30 @@ class AuthController extends Notifier<SignupState> {
     return SignupState();
   }
 
+  // Send Email Verification (for email/password or manually verified accounts)
+  Future<void> sendVerificationEmail(User user) async {
+    final actionCodeSettings = ActionCodeSettings(
+      url: 'https://signinpractice-bfade.firebaseapp.com/onboarding',
+      handleCodeInApp: true,
+      androidPackageName: 'com.voidfactor.app',
+      androidInstallApp: true,
+      androidMinimumVersion: '1',
+      iOSBundleId: 'com.voidfactor.app',
+    );
+    await user.sendEmailVerification(actionCodeSettings);
+  }
+
   // Send Passwordless Email Sign-in/Sign-up Link
   Future<bool> sendPasswordlessLink(String email, {String? name}) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final actionCodeSettings = ActionCodeSettings(
-        url: 'https://signinpractice-bfade.firebaseapp.com',
+        url: 'https://signinpractice-bfade.firebaseapp.com/onboarding',
         handleCodeInApp: true,
-        androidPackageName: 'com.example.firebase_prac_proj',
+        androidPackageName: 'com.voidfactor.app',
         androidMinimumVersion: '1',
         androidInstallApp: true,
-        iOSBundleId: 'com.example.firebase_prac_proj',
+        iOSBundleId: 'com.voidfactor.app',
       );
 
       await _auth.sendSignInLinkToEmail(

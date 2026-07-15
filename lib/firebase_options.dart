@@ -45,7 +45,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDbVIBF-16h2XuJK9ej6eWyMHhACnLT68c',
-    appId: '1:286425881714:android:84e0cc801a3550a39cb6eb',
+    appId: '1:286425881714:android:eeab1979ef36ba089cb6eb',
     messagingSenderId: '286425881714',
     projectId: 'signinpractice-bfade',
     storageBucket: 'signinpractice-bfade.firebasestorage.app',
@@ -53,11 +53,11 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAA_ndTK0eVVDqTGgbZiaWODKuMzfKzthI',
-    appId: '1:286425881714:ios:de99c20dbbc8a9a99cb6eb',
+    appId: '1:286425881714:ios:21cf12699c3588749cb6eb',
     messagingSenderId: '286425881714',
     projectId: 'signinpractice-bfade',
     storageBucket: 'signinpractice-bfade.firebasestorage.app',
-    iosClientId: '286425881714-70lkul9ktqgfdhfe15kic37tf5ger3q1.apps.googleusercontent.com',
-    iosBundleId: 'com.example.voidFactor',
+    iosClientId: '286425881714-gtsrquj0s7uakah3563dlut56pc3m7co.apps.googleusercontent.com',
+    iosBundleId: 'com.voidfactor.app',
   );
 }

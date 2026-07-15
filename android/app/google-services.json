@@ -128,6 +128,50 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:286425881714:android:eeab1979ef36ba089cb6eb",
+        "android_client_info": {
+          "package_name": "com.voidfactor.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "286425881714-os8hsbur396l4msqjce1gbshfkthllqg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.voidfactor.app",
+            "certificate_hash": "9e3214a2a478569f77f2e4b86412d8568e6cfd35"
+          }
+        },
+        {
+          "client_id": "286425881714-tp88krpvhplpvkb6qlsjd4s99nnkd3je.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDbVIBF-16h2XuJK9ej6eWyMHhACnLT68c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "286425881714-tp88krpvhplpvkb6qlsjd4s99nnkd3je.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "286425881714-70lkul9ktqgfdhfe15kic37tf5ger3q1.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.voidFactor"
+              }
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"
