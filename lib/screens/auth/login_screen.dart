@@ -96,7 +96,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     } else {
                       final error = ref.read(authControllerProvider).error;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(error ?? 'Failed to send login link')),
+                        SnackBar(
+                          content: Text(error ?? 'Failed to send login link'),
+                          action: SnackBarAction(
+                            label: 'CREATE ACCOUNT',
+                            onPressed: () {
+                              Navigator.pushNamed(context, '/signup');
+                            },
+                          ),
+                        ),
                       );
                     }
                   },

@@ -37,32 +37,35 @@ class LinkVerificationService {
     final oobCode = uri.queryParameters['oobCode'];
 
     if (mode == 'verifyEmail' && oobCode != null) {
-      await _verifyAndContinue(oobCode, navigatorKey);
+      await _verifyAndLogin(oobCode, navigatorKey);
     } else if (mode == 'signIn') {
       await _signInAndContinue(uri, navigatorKey);
     }
   }
 
-  Future<void> _verifyAndContinue(
+  Future<void> _verifyAndLogin(
     String oobCode,
     GlobalKey<NavigatorState> navigatorKey,
   ) async {
     final auth = FirebaseAuth.instance;
     try {
       await auth.applyActionCode(oobCode);
-      await auth.currentUser?.reload();
-      final user = auth.currentUser;
+      User? user = auth.currentUser;
+      if (user != null) {
+        await user.reload();
+        user = auth.currentUser;
 
-      if (user != null && user.emailVerified) {
-        navigatorKey.currentState?.pushNamedAndRemoveUntil(
-          '/onboarding',
-          (route) => false,
-        );
-      } else {
-        navigatorKey.currentState?.pushNamedAndRemoveUntil(
-          '/verify-failed',
-          (route) => false,
-        );
+        if (user != null && user.emailVerified) {
+          navigatorKey.currentState?.pushNamedAndRemoveUntil(
+            '/onboarding',
+            (route) => false,
+          );
+        } else {
+          navigatorKey.currentState?.pushNamedAndRemoveUntil(
+            '/verify-failed',
+            (route) => false,
+          );
+        }
       }
     } catch (e) {
       navigatorKey.currentState?.pushNamedAndRemoveUntil(

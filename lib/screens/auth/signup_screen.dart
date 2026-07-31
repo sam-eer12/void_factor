@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_button.dart';
 import '../../widgets/monolith_text_field.dart';
-import '../../app/auth_provider.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -15,17 +15,78 @@ class SignupScreen extends ConsumerStatefulWidget {
 class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> handleSecureSignUp({
+    required String email,
+    required String password,
+    required String name,
+    required BuildContext context,
+  }) async {
+    final auth = FirebaseAuth.instance;
+
+    try {
+      UserCredential userCredential = await auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      if (userCredential.user != null) {
+        if (name.isNotEmpty) {
+          await userCredential.user!.updateDisplayName(name);
+        }
+
+        // Send verification email in a separate try-catch so that
+        // account creation success is never masked by a verification failure
+        try {
+          final actionCodeSettings = ActionCodeSettings(
+            url: 'https://signinpractice-bfade.firebaseapp.com/onboarding',
+            handleCodeInApp: true,
+            androidPackageName: 'com.voidfactor.app',
+            androidMinimumVersion: '1',
+            androidInstallApp: true,
+            iOSBundleId: 'com.voidfactor.app',
+          );
+          await userCredential.user!.sendEmailVerification(actionCodeSettings);
+        } catch (_) {
+          // Fallback: send verification without custom ActionCodeSettings
+          await userCredential.user!.sendEmailVerification();
+        }
+
+        if (!context.mounted) return;
+        Navigator.pushNamed(context, '/verify-link');
+      }
+
+    } on FirebaseAuthException catch (e) {
+      if (!context.mounted) return;
+      String message = 'Authentication failed.';
+      if (e.code == 'email-already-in-use') {
+        message = 'This email is already registered. Please log in.';
+      } else if (e.code == 'weak-password') {
+        message = 'The password provided is too weak.';
+      } else if (e.code == 'invalid-email') {
+        message = 'The email address is malformed.';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('An unexpected error occurred.')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authControllerProvider);
 
     return Scaffold(
       backgroundColor: MonolithTheme.background,
@@ -39,7 +100,12 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
 
               // ── Back Button ──
               GestureDetector(
-                onTap: () => Navigator.pop(context),
+                onTap: () async {
+                  // Sign out so AuthGate goes back to login, not onboarding
+                  await FirebaseAuth.instance.signOut();
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                },
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: MonolithTheme.containerDecoration,
@@ -101,10 +167,19 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
               ),
+              const SizedBox(height: 20),
+
+              // ── Password ──
+              MonolithTextField(
+                label: 'Password',
+                hint: '••••••••',
+                controller: _passwordController,
+                obscureText: true,
+              ),
               const SizedBox(height: 40),
 
               // ── Initialize Button ──
-              if (authState.isLoading)
+              if (_isLoading)
                 const Center(
                   child: CircularProgressIndicator.adaptive(
                     valueColor: AlwaysStoppedAnimation<Color>(MonolithTheme.primary),
@@ -116,26 +191,24 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   onPressed: () async {
                     final name = _nameController.text.trim();
                     final email = _emailController.text.trim();
+                    final password = _passwordController.text.trim();
 
-                    if (name.isEmpty || email.isEmpty) {
+                    if (name.isEmpty || email.isEmpty || password.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Please fill all fields')),
                       );
                       return;
                     }
 
-                    final success = await ref
-                        .read(authControllerProvider.notifier)
-                        .sendPasswordlessLink(email, name: name);
-
-                    if (!context.mounted) return;
-                    if (success) {
-                      Navigator.pushNamed(context, '/verify-link');
-                    } else {
-                      final error = ref.read(authControllerProvider).error;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(error ?? 'Failed to send sign up link')),
-                      );
+                    setState(() => _isLoading = true);
+                    await handleSecureSignUp(
+                      email: email,
+                      password: password,
+                      name: name,
+                      context: context,
+                    );
+                    if (mounted) {
+                      setState(() => _isLoading = false);
                     }
                   },
                 ),
@@ -151,7 +224,12 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                       style: MonolithTheme.labelMedium,
                     ),
                     GestureDetector(
-                      onTap: () => Navigator.pop(context),
+                      onTap: () async {
+                        // Sign out so AuthGate goes back to login, not onboarding
+                        await FirebaseAuth.instance.signOut();
+                        if (!context.mounted) return;
+                        Navigator.pop(context);
+                      },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,

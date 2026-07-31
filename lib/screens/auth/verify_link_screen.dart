@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_button.dart';
 import '../../widgets/monolith_text_field.dart';
@@ -19,10 +20,15 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
   int _secondsRemaining = 300; // 5 minutes
   bool _isVerified = false;
 
+  final _syncEngine = VerificationPollingEngine();
+
   @override
   void initState() {
     super.initState();
     _startTimer();
+    _syncEngine.startVerificationPolling(context, () {
+      Navigator.pushNamedAndRemoveUntil(context, '/onboarding', (route) => false);
+    });
   }
 
   void _startTimer() {
@@ -46,6 +52,7 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
   @override
   void dispose() {
     _timer.cancel();
+    _syncEngine.dispose();
     _linkController.dispose();
     super.dispose();
   }
@@ -242,6 +249,43 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
                                         return;
                                       }
 
+                                      // Check if it is a verification link (contains oobCode and mode=verifyEmail)
+                                      final uri = Uri.tryParse(link);
+                                      if (uri != null && uri.queryParameters['mode'] == 'verifyEmail' && uri.queryParameters['oobCode'] != null) {
+                                        try {
+                                          final auth = FirebaseAuth.instance;
+                                          await auth.applyActionCode(uri.queryParameters['oobCode']!);
+                                          final user = auth.currentUser;
+                                          if (user != null) {
+                                            await user.reload();
+                                          }
+                                          if (auth.currentUser?.emailVerified == true) {
+                                            setState(() {
+                                              _isVerified = true;
+                                            });
+                                            _timer.cancel();
+                                            _syncEngine.dispose();
+                                            if (!context.mounted) return;
+                                            Future.delayed(const Duration(seconds: 2), () {
+                                              if (context.mounted) {
+                                                Navigator.pushNamedAndRemoveUntil(
+                                                  context,
+                                                  '/onboarding',
+                                                  (route) => false,
+                                                );
+                                              }
+                                            });
+                                            return;
+                                          }
+                                        } catch (e) {
+                                          if (!context.mounted) return;
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Verification failed: ${e.toString()}')),
+                                          );
+                                          return;
+                                        }
+                                      }
+
                                       final user = await ref
                                           .read(authControllerProvider.notifier)
                                           .signInWithLink(link);
@@ -254,13 +298,14 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
 
                                         // Stop the countdown timer
                                         _timer.cancel();
+                                        _syncEngine.dispose();
 
-                                        // Wait a short moment to let user read success message, then navigate to '/'
+                                        // Wait a short moment to let user read success message, then navigate to '/onboarding'
                                         Future.delayed(const Duration(seconds: 2), () {
                                           if (context.mounted) {
                                             Navigator.pushNamedAndRemoveUntil(
                                               context,
-                                              '/',
+                                              '/onboarding',
                                               (route) => false,
                                             );
                                           }
@@ -330,5 +375,32 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
         ),
       ),
     );
+  }
+}
+
+class VerificationPollingEngine {
+  Timer? _pollingTimer;
+
+  void startVerificationPolling(BuildContext context, VoidCallback onVerified) {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        try {
+          await user.reload();
+          final updatedUser = FirebaseAuth.instance.currentUser;
+          if (updatedUser != null && updatedUser.emailVerified) {
+            timer.cancel();
+            onVerified();
+          }
+        } catch (_) {
+          // Ignore transient network errors during background polling
+        }
+      }
+    });
+  }
+
+  void dispose() {
+    _pollingTimer?.cancel();
   }
 }

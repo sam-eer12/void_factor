@@ -16,10 +16,12 @@ void main() {
       ProviderScope(
         overrides: [
           authControllerProvider.overrideWith(() => MockAuthController()),
+          authStateProvider.overrideWith((ref) => Stream.value(null)),
         ],
         child: const MonolithApp(),
       ),
     );
+    await tester.pumpAndSettle();
     expect(find.text('LOGIN'), findsOneWidget);
   });
 }
