@@ -1,9 +1,12 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_drawer.dart';
 import '../../app/auth_provider.dart';
+import '../../app/health_providers.dart';
+import '../../models/health_metrics.dart';
 import 'monolith_shell.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -19,6 +22,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authStateProvider).value;
+    final metrics = ref.watch(healthMetricsProvider);
+    final healthStatus = ref.watch(healthStatusProvider);
+    final connected = healthStatus == HealthConnectionStatus.enabled;
 
     return Scaffold(
       key: _scaffoldKey,
@@ -121,21 +127,41 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: MonolithStatCard(
-                            title: 'Steps',
-                            value: '8,432',
-                            subtitle: 'From Health Connect',
-                            icon: Icons.directions_walk,
+                          child: GestureDetector(
+                            onTap: connected
+                                ? null
+                                : () => MonolithShell.setActiveTab(
+                                    context, 3, '/settings'),
+                            child: MonolithStatCard(
+                              title: 'Steps',
+                              value: connected ? _formatInt(metrics.steps) : '—',
+                              subtitle: connected
+                                  ? (Platform.isIOS
+                                      ? 'From Apple Health'
+                                      : 'From Health Connect')
+                                  : 'Connect in Settings',
+                              icon: Icons.directions_walk,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: MonolithStatCard(
-                            title: 'Workout Mins',
-                            value: '45',
-                            subtitle: 'Goal: 60 Mins',
-                            icon: Icons.fitness_center,
-                            inverted: true,
+                          child: GestureDetector(
+                            onTap: connected
+                                ? null
+                                : () => MonolithShell.setActiveTab(
+                                    context, 3, '/settings'),
+                            child: MonolithStatCard(
+                              title: 'Workout Mins',
+                              value: connected
+                                  ? metrics.workoutMinutes.toString()
+                                  : '—',
+                              subtitle: connected
+                                  ? 'Minutes Today'
+                                  : 'Connect in Settings',
+                              icon: Icons.fitness_center,
+                              inverted: true,
+                            ),
                           ),
                         ),
                       ],
@@ -144,11 +170,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: MonolithStatCard(
-                            title: 'Water',
-                            value: '64oz',
-                            subtitle: 'Remaining: 32 oz',
-                            icon: Icons.water_drop,
+                          child: GestureDetector(
+                            onTap: connected
+                                ? null
+                                : () => MonolithShell.setActiveTab(
+                                    context, 3, '/settings'),
+                            child: MonolithStatCard(
+                              title: 'Water',
+                              value: connected
+                                  ? '${metrics.waterOz.round()} oz'
+                                  : '—',
+                              subtitle: connected
+                                  ? _syncedSubtitle(metrics.lastSynced)
+                                  : 'Connect in Settings',
+                              icon: Icons.water_drop,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -241,5 +277,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ),
       ),
     );
+  }
+
+  // Groups an integer with thousands separators, e.g. 8432 -> "8,432".
+  String _formatInt(int n) {
+    final s = n.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
+  }
+
+  // Water card subtitle: shows when the metrics were last read.
+  String _syncedSubtitle(DateTime? ts) {
+    if (ts == null) return 'Not Yet Synced';
+    final h = ts.hour % 12 == 0 ? 12 : ts.hour % 12;
+    final m = ts.minute.toString().padLeft(2, '0');
+    final ap = ts.hour < 12 ? 'AM' : 'PM';
+    return 'As of $h:$m $ap';
   }
 }

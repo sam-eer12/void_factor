@@ -39,6 +39,10 @@ class SessionService {
     await _secureStorage.delete(key: _profileCompletedKey);
     await _secureStorage.delete(key: 'api_key');
     await _secureStorage.delete(key: 'api_provider');
+    // Drop cached health data + the connection flag so the next user starts
+    // disconnected and can't read the prior user's metrics.
+    await _secureStorage.delete(key: 'health_metrics_json');
+    await _secureStorage.delete(key: 'health_enabled');
     // Drop the mirrored profile blob so the next user can't read stale data.
     await _profileRepository.clearLocal();
   }

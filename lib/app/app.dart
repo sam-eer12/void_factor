@@ -4,6 +4,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../theme/monolith_theme.dart';
 import 'routes.dart';
 import 'link_verification_service.dart';
+import 'health_providers.dart';
 
 class MonolithApp extends ConsumerStatefulWidget {
   const MonolithApp({super.key});
@@ -12,15 +13,31 @@ class MonolithApp extends ConsumerStatefulWidget {
   ConsumerState<MonolithApp> createState() => _MonolithAppState();
 }
 
-class _MonolithAppState extends ConsumerState<MonolithApp> {
+class _MonolithAppState extends ConsumerState<MonolithApp>
+    with WidgetsBindingObserver {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(linkVerificationServiceProvider).init(_navigatorKey);
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-read health metrics whenever the app returns to the foreground.
+    if (state == AppLifecycleState.resumed) {
+      ref.read(healthMetricsProvider.notifier).refresh();
+    }
   }
 
   @override
