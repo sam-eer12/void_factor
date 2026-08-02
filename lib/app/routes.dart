@@ -8,6 +8,8 @@ import '../screens/onboarding/profile_init_screen.dart';
 import '../screens/dashboard/monolith_shell.dart';
 import '../screens/food_log/manual_food_log_screen.dart';
 import '../screens/donation/donation_screen.dart';
+import '../screens/settings/edit_profile_screen.dart';
+import '../screens/settings/goals_diet_screen.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -25,6 +27,8 @@ class AppRoutes {
   static const String foodLog = '/food-log';
   static const String settings = '/settings';
   static const String donation = '/donation';
+  static const String editProfile = '/edit-profile';
+  static const String goalsDiet = '/goals-diet';
 
   static Map<String, WidgetBuilder> get routes => {
         authGate: (_) => const AuthGate(),
@@ -40,5 +44,7 @@ class AppRoutes {
         settings: (_) => const MonolithShell(initialIndex: 3),
         foodLog: (_) => const ManualFoodLogScreen(),
         donation: (_) => const DonationScreen(),
+        editProfile: (_) => const EditProfileScreen(),
+        goalsDiet: (_) => const GoalsDietScreen(),
       };
 }

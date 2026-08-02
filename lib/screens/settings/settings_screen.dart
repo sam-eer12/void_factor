@@ -109,9 +109,11 @@ class SettingsScreen extends ConsumerWidget {
                           const SizedBox(height: 16),
                           profileAsync.when(
                             data: (profile) {
-                              final height = profile['height'] ?? '0';
-                              final weight = profile['weight'] ?? '0';
-                              final age = profile['age'] ?? '0';
+                              final height = _fmt(profile.height);
+                              final weight = _fmt(profile.weight);
+                              final age = profile.age > 0
+                                  ? profile.age.toString()
+                                  : '--';
                               return Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceAround,
@@ -174,7 +176,14 @@ class SettingsScreen extends ConsumerWidget {
                       Icons.person_outline,
                       'EDIT PROFILE',
                       'Update physical metrics',
-                      () {},
+                      () => Navigator.pushNamed(context, '/edit-profile'),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildSettingsTile(
+                      Icons.flag_outlined,
+                      'GOALS & DIET',
+                      'Weight goal, target & allergies',
+                      () => Navigator.pushNamed(context, '/goals-diet'),
                     ),
                     const SizedBox(height: 8),
                     _buildSettingsTile(
@@ -281,6 +290,15 @@ class SettingsScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  // Formats a metric for display: 0 (unset) shows as '--', whole numbers drop
+  // the trailing '.0'.
+  String _fmt(double value) {
+    if (value <= 0) return '--';
+    return value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toString();
   }
 
   Widget _buildProfileStat(String label, String value) {
