@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/health_metrics.dart';
 import 'health_repository.dart';
 import 'health_observer_service.dart';
+import 'health_background_service.dart';
 
 /// Foreground re-read cadence (matches the product "every 4 min" requirement).
 const Duration healthRefreshInterval = Duration(minutes: 4);
@@ -33,6 +34,7 @@ class HealthStatusNotifier extends Notifier<HealthConnectionStatus> {
       final ctrl = ref.read(healthMetricsProvider.notifier);
       ctrl.startAutoRefresh();
       await ctrl.refresh();
+      await scheduleHealthRefresh(); // Android background tier (15 min floor)
     }
     return status;
   }
@@ -41,6 +43,7 @@ class HealthStatusNotifier extends Notifier<HealthConnectionStatus> {
     final repo = ref.read(healthRepositoryProvider);
     await repo.disable();
     ref.read(healthMetricsProvider.notifier).stopAutoRefresh();
+    await cancelHealthRefresh();
     state = HealthConnectionStatus.disabled;
   }
 }
