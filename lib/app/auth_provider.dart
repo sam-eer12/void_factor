@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'session_provider.dart';
+import 'health_providers.dart';
 
 final authStateProvider = StreamProvider<User?>((ref) {
   return FirebaseAuth.instance.authStateChanges();
@@ -203,6 +204,14 @@ class AuthController extends Notifier<SignupState> {
     // Drop the cached profile so a different user signing in next can't see
     // the previous user's stale metrics.
     ref.invalidate(profileProvider);
+    // Reset the in-memory health state too. clearSession() only wipes the
+    // secure-storage keys; these root-scoped notifiers otherwise retain the
+    // prior user's "enabled" status + cached metrics (and keep the refresh
+    // timer / HealthKit observer running) until the app is killed. Invalidating
+    // them tears down the timer/observer via onDispose and rebuilds from the
+    // now-cleared store, so the next user starts genuinely disconnected.
+    ref.invalidate(healthMetricsProvider);
+    ref.invalidate(healthStatusProvider);
   }
 }
 
