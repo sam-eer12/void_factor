@@ -89,5 +89,7 @@
 	</array>
 	<key>GIDClientID</key>
 	<string>286425881714-70lkul9ktqgfdhfe15kic37tf5ger3q1.apps.googleusercontent.com</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Void Factor reads your steps, water, and workout data to show your daily activity on the home screen.</string>
 </dict>
 </plist>
