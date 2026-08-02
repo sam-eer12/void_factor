@@ -203,6 +203,12 @@ final sessionServiceProvider = Provider<SessionService>((ref) {
 enum AuthFlowState { loading, login, onboarding, dashboard }
 
 class AuthFlowNotifier extends Notifier<AuthFlowState> {
+  // Monotonic token used to discard results from superseded checkFlow() runs.
+  // An auth-state change and an app-resume can both trigger checkFlow() at
+  // roughly the same time; without this guard a slower, older run could resolve
+  // last and overwrite the state produced by the newer one.
+  int _checkToken = 0;
+
   @override
   AuthFlowState build() {
     // Listen to authState changes
@@ -230,11 +236,17 @@ class AuthFlowNotifier extends Notifier<AuthFlowState> {
       return;
     }
 
+    final token = ++_checkToken;
     state = AuthFlowState.loading;
     try {
       final service = ref.read(sessionServiceProvider);
       final result = await service.manageSessionAndFlow();
+      // A newer checkFlow() started while we were awaiting; let it win.
+      if (token != _checkToken) return;
       if (result == 'dashboard') {
+        // Refresh the cached profile that Settings reads, now that the session
+        // sync has written the latest metrics to secure storage.
+        ref.invalidate(profileProvider);
         state = AuthFlowState.dashboard;
       } else if (result == 'onboarding') {
         state = AuthFlowState.onboarding;
@@ -242,12 +254,14 @@ class AuthFlowNotifier extends Notifier<AuthFlowState> {
         state = AuthFlowState.login;
       }
     } catch (e) {
+      if (token != _checkToken) return;
       state = AuthFlowState.login;
     }
   }
 
   // Call this after completing onboarding
   void markOnboardingComplete() {
+    ref.invalidate(profileProvider);
     state = AuthFlowState.dashboard;
   }
 }

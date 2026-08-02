@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -189,12 +190,36 @@ class AuthController extends Notifier<SignupState> {
   // Sign out
   Future<void> signOut() async {
     await _auth.signOut();
-    await GoogleSignIn.instance.signOut();
+    // Email-link users never initialize GoogleSignIn, so signing out of Google
+    // can throw ("not initialized") in google_sign_in 7.x. Guard it so a
+    // Google failure can never abort the Firebase sign-out or session clear.
+    try {
+      await GoogleSignIn.instance.initialize();
+      await GoogleSignIn.instance.signOut();
+    } catch (_) {
+      // No active Google session (or Google not configured) — nothing to do.
+    }
     await ref.read(sessionServiceProvider).clearSession();
+    // Drop the cached profile so a different user signing in next can't see
+    // the previous user's stale metrics.
+    ref.invalidate(profileProvider);
   }
 }
 
 final authControllerProvider = NotifierProvider<AuthController, SignupState>(() {
   return AuthController();
 });
+
+/// Signs the user out of Firebase, Google, and the local session, then returns
+/// to the login screen with a fully cleared navigation stack.
+///
+/// Every "log out" entry point should call this so the teardown is identical
+/// everywhere — previously some screens only navigated to `/login` while
+/// leaving the Firebase/session state intact, which silently re-logged the
+/// user back in.
+Future<void> performLogout(BuildContext context, WidgetRef ref) async {
+  await ref.read(authControllerProvider.notifier).signOut();
+  if (!context.mounted) return;
+  Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+}
 

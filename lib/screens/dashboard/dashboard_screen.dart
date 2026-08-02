@@ -37,12 +37,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           Navigator.pop(context);
           Navigator.pushNamed(context, '/food-log');
         },
-        onLogoutTap: () async {
-          await ref.read(authControllerProvider.notifier).signOut();
-          if (context.mounted) {
-            Navigator.pushReplacementNamed(context, '/login');
-          }
-        },
+        onLogoutTap: () => performLogout(context, ref),
       ),
       body: SafeArea(
         bottom: false,

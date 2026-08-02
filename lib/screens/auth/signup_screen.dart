@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_button.dart';
 import '../../widgets/monolith_text_field.dart';
+import '../../app/auth_provider.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -101,8 +102,10 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
               // ── Back Button ──
               GestureDetector(
                 onTap: () async {
-                  // Sign out so AuthGate goes back to login, not onboarding
-                  await FirebaseAuth.instance.signOut();
+                  // Sign out so AuthGate goes back to login, not onboarding.
+                  // Route through the controller for the same full teardown
+                  // (Google + session + cached profile) used everywhere else.
+                  await ref.read(authControllerProvider.notifier).signOut();
                   if (!context.mounted) return;
                   Navigator.pop(context);
                 },
@@ -225,8 +228,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                     ),
                     GestureDetector(
                       onTap: () async {
-                        // Sign out so AuthGate goes back to login, not onboarding
-                        await FirebaseAuth.instance.signOut();
+                        // Sign out so AuthGate goes back to login, not onboarding.
+                        await ref.read(authControllerProvider.notifier).signOut();
                         if (!context.mounted) return;
                         Navigator.pop(context);
                       },

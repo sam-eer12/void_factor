@@ -1,18 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_drawer.dart';
+import '../../app/auth_provider.dart';
 import '../dashboard/monolith_shell.dart';
 
-class ProjectionsScreen extends StatelessWidget {
+class ProjectionsScreen extends ConsumerStatefulWidget {
   const ProjectionsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final scaffoldKey = GlobalKey<ScaffoldState>();
+  ConsumerState<ProjectionsScreen> createState() => _ProjectionsScreenState();
+}
 
+class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      key: scaffoldKey,
+      key: _scaffoldKey,
       backgroundColor: MonolithTheme.background,
       drawer: MonolithDrawer(
         onProfileTap: () {
@@ -27,9 +34,7 @@ class ProjectionsScreen extends StatelessWidget {
           Navigator.pop(context);
           Navigator.pushNamed(context, '/food-log');
         },
-        onLogoutTap: () {
-          Navigator.pushReplacementNamed(context, '/login');
-        },
+        onLogoutTap: () => performLogout(context, ref),
       ),
       body: SafeArea(
         bottom: false,
@@ -51,7 +56,7 @@ class ProjectionsScreen extends StatelessWidget {
               child: Row(
                 children: [
                   GestureDetector(
-                    onTap: () => scaffoldKey.currentState?.openDrawer(),
+                    onTap: () => _scaffoldKey.currentState?.openDrawer(),
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: MonolithTheme.containerDecoration,
