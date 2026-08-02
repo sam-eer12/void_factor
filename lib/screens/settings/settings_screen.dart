@@ -7,6 +7,7 @@ import '../../app/auth_provider.dart';
 import '../../app/session_provider.dart';
 import '../dashboard/monolith_shell.dart';
 
+
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
