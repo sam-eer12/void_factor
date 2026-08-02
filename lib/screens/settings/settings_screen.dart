@@ -205,7 +205,7 @@ class SettingsScreen extends ConsumerWidget {
                       Icons.health_and_safety_outlined,
                       'HEALTH CONNECT',
                       'Sync with health services',
-                      () {},
+                      () => Navigator.pushNamed(context, '/health-connect'),
                     ),
                     const SizedBox(height: 8),
                     _buildSettingsTile(

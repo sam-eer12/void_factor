@@ -10,6 +10,7 @@ import '../screens/food_log/manual_food_log_screen.dart';
 import '../screens/donation/donation_screen.dart';
 import '../screens/settings/edit_profile_screen.dart';
 import '../screens/settings/goals_diet_screen.dart';
+import '../screens/settings/health_connect_screen.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -29,6 +30,7 @@ class AppRoutes {
   static const String donation = '/donation';
   static const String editProfile = '/edit-profile';
   static const String goalsDiet = '/goals-diet';
+  static const String healthConnect = '/health-connect';
 
   static Map<String, WidgetBuilder> get routes => {
         authGate: (_) => const AuthGate(),
@@ -46,5 +48,6 @@ class AppRoutes {
         donation: (_) => const DonationScreen(),
         editProfile: (_) => const EditProfileScreen(),
         goalsDiet: (_) => const GoalsDietScreen(),
+        healthConnect: (_) => const HealthConnectScreen(),
       };
 }
