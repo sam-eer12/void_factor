@@ -18,6 +18,8 @@ def normalize(data: dict) -> dict:
 
     Accepts either the nested target shape or a flat {food_name, calories, ...}.
     """
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=502, detail="invalid response from model")
     nutrients = data.get("nutrients")
     if not isinstance(nutrients, dict):
         nutrients = data

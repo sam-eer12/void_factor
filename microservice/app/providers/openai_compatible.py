@@ -34,15 +34,15 @@ async def call_openai_compatible(
     try:
         async with httpx.AsyncClient(timeout=60) as http_client:
             resp = await http_client.post(url, headers=headers, json=payload)
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"provider request failed: {e}")
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="provider request failed")
     if resp.status_code != 200:
         raise HTTPException(
             status_code=502, detail=f"provider error: {resp.status_code}"
         )
-    body = resp.json()
     try:
+        body = resp.json()
         content = body["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError):
+    except (ValueError, KeyError, IndexError, TypeError):
         raise HTTPException(status_code=502, detail="invalid response from model")
     return normalize(parse_model_json(content))

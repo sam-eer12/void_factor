@@ -135,3 +135,49 @@ def test_nvidia_missing_key_returns_401(monkeypatch):
         files={"image": ("food.jpg", b"x", "image/jpeg")},
     )
     assert resp.status_code == 401
+
+
+def test_normalize_flat_shape():
+    from app.parsing import normalize
+    out = normalize({"food_name": "Apple", "calories": 95, "protein_g": 0.5,
+                     "carbs_g": 25, "fats_g": 0.3})
+    assert out["name"] == "Apple"
+    assert out["nutrients"]["calories"] == 95
+    assert set(out["nutrients"]) == {"calories", "protein_g", "carbs_g", "fats_g"}
+
+
+def test_normalize_non_dict_raises_502():
+    from fastapi import HTTPException
+    from app.parsing import normalize
+    import pytest
+    with pytest.raises(HTTPException) as exc:
+        normalize([1, 2, 3])
+    assert exc.value.status_code == 502
+
+
+@respx.mock
+def test_openrouter_non_dict_json_returns_502():
+    # Model returns valid JSON that is a list, not an object.
+    respx.post(OPENROUTER_URL).mock(
+        return_value=Response(200, json=_chat_completion("[1,2,3]"))
+    )
+    resp = client.post(
+        "/api/v1/openrouter",
+        headers={"X-OpenRouter-Key": "test", "X-User-Id": "u1"},
+        files={"image": ("food.jpg", b"x", "image/jpeg")},
+    )
+    assert resp.status_code == 502
+
+
+@respx.mock
+def test_openrouter_non_json_200_returns_502():
+    # Provider returns HTTP 200 but a non-JSON body (e.g. an HTML error page).
+    respx.post(OPENROUTER_URL).mock(
+        return_value=Response(200, text="<html>not json</html>")
+    )
+    resp = client.post(
+        "/api/v1/openrouter",
+        headers={"X-OpenRouter-Key": "test", "X-User-Id": "u1"},
+        files={"image": ("food.jpg", b"x", "image/jpeg")},
+    )
+    assert resp.status_code == 502

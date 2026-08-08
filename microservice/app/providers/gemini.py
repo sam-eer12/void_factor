@@ -16,6 +16,7 @@ async def call_gemini(api_key_header: str | None, image_bytes: bytes) -> dict:
         response = model.generate_content(
             [config.PROMPT, {"mime_type": "image/jpeg", "data": image_bytes}]
         )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"provider request failed: {e}")
-    return normalize(parse_model_json(response.text))
+        raw_text = response.text
+    except Exception:
+        raise HTTPException(status_code=502, detail="provider request failed")
+    return normalize(parse_model_json(raw_text))
