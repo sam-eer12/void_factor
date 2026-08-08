@@ -1,69 +1,89 @@
-from fastapi import FastAPI, Header, UploadFile, File, HTTPException, Request
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+from fastapi import FastAPI, Header, UploadFile, File, HTTPException
 import google.generativeai as genai
 import json
-import uvicorn
-from dotenv import load_dotenv
 import os
+from dotenv import load_dotenv
+
 load_dotenv()
 
 app = FastAPI()
 
-DEV_KEY1= os.getenv('x_gemini_key')
-DEV_KEY2 = os.getenv('x_openrouter_key')
+DEV_GEMINI_KEY = os.getenv("x_gemini_key")
+DEV_OPENROUTER_KEY = os.getenv("x_openrouter_key")
+DEV_NVIDIA_KEY = os.getenv("NVIDIA_API_KEY")
 
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+GEMINI_MODEL = "gemini-3.1-flash-lite-preview"
+
+PROMPT = (
+    "Analyze the food in this image. Respond with ONLY a JSON object, no markdown, "
+    "in exactly this shape: "
+    '{"name": <food name string>, "nutrients": {"calories": <number>, '
+    '"protein_g": <number>, "carbs_g": <number>, "fats_g": <number>}}'
+)
+
+
+def _strip_json_fences(text: str) -> str:
+    return text.replace("```json", "").replace("```", "").strip()
+
+
+def _parse_model_json(raw_text: str) -> dict:
+    try:
+        return json.loads(_strip_json_fences(raw_text))
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        raise HTTPException(status_code=502, detail="invalid response from model")
+
+
+def _normalize(data: dict) -> dict:
+    """Coerce a provider's parsed JSON into {name, nutrients:{...}}.
+
+    Accepts either the nested target shape or a flat {food_name, calories, ...}.
+    """
+    nutrients = data.get("nutrients")
+    if not isinstance(nutrients, dict):
+        nutrients = data
+    return {
+        "name": data.get("name") or data.get("food_name") or "",
+        "nutrients": {
+            "calories": nutrients.get("calories"),
+            "protein_g": nutrients.get("protein_g"),
+            "carbs_g": nutrients.get("carbs_g"),
+            "fats_g": nutrients.get("fats_g"),
+        },
+    }
+
 
 @app.post("/api/v1/gemini")
-@limiter.limit("2/minute")
 async def analyze_with_gemini(
-    request: Request,
     image: UploadFile = File(...),
-    x_gemini_key: str = Header(None)
+    x_gemini_key: str = Header(None),
 ):
-    api_key = x_gemini_key or DEV_KEY1
-    
+    api_key = x_gemini_key or DEV_GEMINI_KEY
     if not api_key:
         raise HTTPException(status_code=401, detail="Gemini API Key missing")
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-3.1-flash-lite-preview')
-    
+    model = genai.GenerativeModel(GEMINI_MODEL)
     image_data = await image.read()
-    prompt = "Analyze food image. Return JSON: {food_name, calories, protein_g, carbs_g, fats_g}"
-    
-    response = model.generate_content([prompt, {"mime_type": "image/jpeg", "data": image_data}])
-    return json.loads(response.text.replace("```json", "").replace("```", "").strip())
+    try:
+        response = model.generate_content(
+            [PROMPT, {"mime_type": "image/jpeg", "data": image_data}]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"provider request failed: {e}")
+    return _normalize(_parse_model_json(response.text))
 
-@app.post("/api/v1/openrouter")
-@limiter.limit("2/minute")
-async def analyze_with_openrouter(
-    request: Request,
-    image: UploadFile = File(...),
-    x_openrouter_key: str = Header(None)
-):
-    
-    if not x_openrouter_key:
-        raise HTTPException(status_code=401, detail="OpenRouter API Key missing")
-    
-    return {"status": "success", "provider": "openrouter"}
 
 @app.get("/")
 async def root():
     return {"message": "Welcome to the Void Factor Microservice"}
 
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
 
+
 if __name__ == "__main__":
-    uvicorn.run(
-        "app:app", 
-        host="0.0.0.0", 
-        port=8000, 
-        reload=True
-    )
+    import uvicorn
+
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
