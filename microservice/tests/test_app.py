@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 import app as appmod
 from app import app
 
+
 client = TestClient(app)
 
 FOOD_JSON = (
@@ -56,6 +57,52 @@ def test_gemini_bad_json_returns_502(monkeypatch):
     resp = client.post(
         "/api/v1/gemini",
         headers={"X-Gemini-Key": "test", "X-User-Id": "u1"},
+        files={"image": ("food.jpg", b"x", "image/jpeg")},
+    )
+    assert resp.status_code == 502
+
+
+import respx
+from httpx import Response
+
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+def _chat_completion(content):
+    return {"choices": [{"message": {"content": content}}]}
+
+
+@respx.mock
+def test_openrouter_success():
+    route = respx.post(OPENROUTER_URL).mock(
+        return_value=Response(200, json=_chat_completion(FOOD_JSON))
+    )
+    resp = client.post(
+        "/api/v1/openrouter",
+        headers={"X-OpenRouter-Key": "test", "X-User-Id": "u1"},
+        files={"image": ("food.jpg", b"fakebytes", "image/jpeg")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Banana"
+    assert route.called
+
+
+def test_openrouter_missing_key_returns_401(monkeypatch):
+    monkeypatch.setattr("app.DEV_OPENROUTER_KEY", None)
+    resp = client.post(
+        "/api/v1/openrouter",
+        headers={"X-User-Id": "u1"},
+        files={"image": ("food.jpg", b"x", "image/jpeg")},
+    )
+    assert resp.status_code == 401
+
+
+@respx.mock
+def test_openrouter_provider_error_returns_502():
+    respx.post(OPENROUTER_URL).mock(return_value=Response(500, text="boom"))
+    resp = client.post(
+        "/api/v1/openrouter",
+        headers={"X-OpenRouter-Key": "test", "X-User-Id": "u1"},
         files={"image": ("food.jpg", b"x", "image/jpeg")},
     )
     assert resp.status_code == 502
