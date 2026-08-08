@@ -16,6 +16,7 @@ DEV_NVIDIA_KEY = os.getenv("NVIDIA_API_KEY")
 
 GEMINI_MODEL = "gemini-3.1-flash-lite-preview"
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+NVIDIA_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
 
 PROMPT = (
     "Analyze the food in this image. Respond with ONLY a JSON object, no markdown, "
@@ -132,6 +133,30 @@ async def analyze_with_openrouter(
         api_key,
         OPENROUTER_MODEL,
         image_data,
+    )
+
+
+@app.post("/api/v1/nvidia")
+async def analyze_with_nvidia(
+    image: UploadFile = File(...),
+    x_nvidia_key: str = Header(None),
+):
+    api_key = x_nvidia_key or DEV_NVIDIA_KEY
+    if not api_key:
+        raise HTTPException(status_code=401, detail="NVIDIA API Key missing")
+    image_data = await image.read()
+    return await _call_openai_compatible(
+        "https://integrate.api.nvidia.com/v1/chat/completions",
+        api_key,
+        NVIDIA_MODEL,
+        image_data,
+        extra_payload={
+            "max_tokens": 65536,
+            "reasoning_budget": 16384,
+            "temperature": 0.6,
+            "top_p": 0.95,
+            "stream": False,
+        },
     )
 
 

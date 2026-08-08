@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import json
 import app as appmod
 from app import app
 
@@ -106,3 +107,35 @@ def test_openrouter_provider_error_returns_502():
         files={"image": ("food.jpg", b"x", "image/jpeg")},
     )
     assert resp.status_code == 502
+
+
+NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+
+
+@respx.mock
+def test_nvidia_success():
+    route = respx.post(NVIDIA_URL).mock(
+        return_value=Response(200, json=_chat_completion(FOOD_JSON))
+    )
+    resp = client.post(
+        "/api/v1/nvidia",
+        headers={"X-Nvidia-Key": "test", "X-User-Id": "u1"},
+        files={"image": ("food.jpg", b"fakebytes", "image/jpeg")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["nutrients"]["protein_g"] == 1.3
+    assert route.called
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["model"] == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+    assert sent["max_tokens"] == 65536
+    assert sent["stream"] is False
+
+
+def test_nvidia_missing_key_returns_401(monkeypatch):
+    monkeypatch.setattr("app.DEV_NVIDIA_KEY", None)
+    resp = client.post(
+        "/api/v1/nvidia",
+        headers={"X-User-Id": "u1"},
+        files={"image": ("food.jpg", b"x", "image/jpeg")},
+    )
+    assert resp.status_code == 401
