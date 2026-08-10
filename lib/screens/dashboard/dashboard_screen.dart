@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_drawer.dart';
-import '../../app/auth_provider.dart';
-import '../../app/health_providers.dart';
+import '../../features/auth/auth_provider.dart';
+import '../../features/health/health_providers.dart';
 import '../../models/health_metrics.dart';
 import 'monolith_shell.dart';
 

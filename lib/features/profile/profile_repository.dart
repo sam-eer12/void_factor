@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import '../models/user_profile.dart';
+import '../../models/user_profile.dart';
 
 /// Single source of truth for reading and writing the user's [UserProfile].
 ///

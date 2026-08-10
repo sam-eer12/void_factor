@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/health_metrics.dart';
+import '../../models/health_metrics.dart';
 import 'health_repository.dart';
 import 'health_observer_service.dart';
 import 'health_background_service.dart';

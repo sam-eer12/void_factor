@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:void_factor/app/health_providers.dart';
-import 'package:void_factor/app/health_repository.dart';
-import 'package:void_factor/app/health_observer_service.dart';
+import 'package:void_factor/features/health/health_providers.dart';
+import 'package:void_factor/features/health/health_repository.dart';
+import 'package:void_factor/features/health/health_observer_service.dart';
 import 'package:void_factor/models/health_metrics.dart';
 
 class _Never implements HealthGateway {

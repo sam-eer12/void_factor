@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../app/health_providers.dart';
+import '../../features/health/health_providers.dart';
 import '../../models/health_metrics.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_button.dart';

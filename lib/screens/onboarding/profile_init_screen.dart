@@ -4,7 +4,7 @@ import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_button.dart';
 import '../../widgets/monolith_text_field.dart';
 import '../../widgets/monolith_card.dart';
-import '../../app/session_provider.dart';
+import '../../features/auth/session_provider.dart';
 
 class ProfileInitScreen extends ConsumerStatefulWidget {
   const ProfileInitScreen({super.key});

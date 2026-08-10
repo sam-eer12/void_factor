@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_button.dart';
-import '../../app/auth_provider.dart';
-import '../../app/session_provider.dart';
+import '../../features/auth/auth_provider.dart';
+import '../../features/auth/session_provider.dart';
 import '../dashboard/monolith_shell.dart';
 
 

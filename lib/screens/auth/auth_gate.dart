@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/monolith_theme.dart';
-import '../../app/session_provider.dart';
+import '../../features/auth/session_provider.dart';
 import 'login_screen.dart';
 import '../onboarding/profile_init_screen.dart';
 import '../dashboard/monolith_shell.dart';

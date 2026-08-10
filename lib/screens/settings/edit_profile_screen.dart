@@ -4,8 +4,8 @@ import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_button.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_text_field.dart';
-import '../../app/profile_repository.dart';
-import '../../app/session_provider.dart';
+import '../../features/profile/profile_repository.dart';
+import '../../features/auth/session_provider.dart';
 import '../../models/user_profile.dart';
 
 /// Edits the user's physical metrics (height, weight, age, gender).

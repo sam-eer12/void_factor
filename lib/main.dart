@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'app/app.dart';
-import 'app/health_background_service.dart';
+import 'features/health/health_background_service.dart';
 import 'firebase_options.dart';
 
 void main() async {

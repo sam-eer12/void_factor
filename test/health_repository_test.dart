@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:void_factor/app/health_repository.dart';
+import 'package:void_factor/features/health/health_repository.dart';
 import 'package:void_factor/models/health_metrics.dart';
 
 /// In-memory fake for the secure-storage seam.

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:health/health.dart';
-import '../models/health_metrics.dart';
+import '../../models/health_metrics.dart';
 
 const double _mlPerFlOz = 29.5735;
 const Duration _timeout = Duration(seconds: 15);

@@ -3,9 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import '../models/user_profile.dart';
+import '../../models/user_profile.dart';
 import 'auth_provider.dart';
-import 'profile_repository.dart';
+import '../profile/profile_repository.dart';
 
 class SessionService {
   SessionService(this._profileRepository);

@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../theme/monolith_theme.dart';
 import 'routes.dart';
-import 'link_verification_service.dart';
-import 'health_providers.dart';
+import '../features/auth/link_verification_service.dart';
+import '../features/health/health_providers.dart';
 
 class MonolithApp extends ConsumerStatefulWidget {
   const MonolithApp({super.key});

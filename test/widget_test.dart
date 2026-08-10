@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:void_factor/app/app.dart';
-import 'package:void_factor/app/auth_provider.dart';
+import 'package:void_factor/features/auth/auth_provider.dart';
 
 class MockAuthController extends AuthController {
   @override

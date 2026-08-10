@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_button.dart';
 import '../../widgets/monolith_text_field.dart';
-import '../../app/auth_provider.dart';
+import '../../features/auth/auth_provider.dart';
 
 class VerifyLinkScreen extends ConsumerStatefulWidget {
   const VerifyLinkScreen({super.key});
