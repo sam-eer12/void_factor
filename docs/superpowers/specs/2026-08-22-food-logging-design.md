@@ -25,16 +25,20 @@ Every logged item carries a quantity the user can increment and decrement.
 ## Scope
 
 **In scope:** the two logging flows end to end, a shared entry form, the
-quantity stepper, Firestore persistence, 72h history rendering on both
-screens, and the platform configuration required for either flow to run.
+quantity stepper, Firestore persistence, three-day history rendering on both
+screens, the platform configuration required for either flow to run, and a
+Settings screen to add or replace the stored API key.
 
 **Explicitly out of scope** (agreed, natural follow-ups):
 
 - Editing or deleting existing log entries.
 - Wiring today's calorie/macro totals onto the dashboard, which currently
   shows only Health Connect metrics.
-- Adding a Settings field to change `api_key` after onboarding (see
-  [Known gaps](#known-gaps)).
+- Account deletion — specified separately in
+  `2026-08-22-account-deletion-design.md`, because it touches auth,
+  reauthentication, and Firestore cleanup rather than food logging. It does
+  depend on this design: it must delete the `food_logs` subcollection
+  introduced here.
 - Any change to the Python microservice or nginx.
 
 ## Decisions
@@ -47,6 +51,7 @@ screens, and the platform configuration required for either flow to run.
 | Image retention | **Discarded** after analysis. Log entries are text-only; `firebase_storage` stays unused. |
 | Vision vs manual form | **One shared editable form.** Vision pre-fills it; every field stays editable so a bad AI reading can be corrected before saving. |
 | Layering | Feature slice with a repository + API client + Riverpod providers, mirroring `features/health/` and `features/profile/`. |
+| API key rotation | **Dedicated `/api-key` screen**, saved without validating against the provider. |
 
 ### Rejected alternatives
 
@@ -65,6 +70,16 @@ screens, and the platform configuration required for either flow to run.
   profile. A profile is one bounded document; a log is append-only and
   unbounded, so a JSON blob mirror is the wrong shape. Firestore's built-in
   offline persistence covers the same need.
+- **Validating the API key on save** by POSTing a test image to the chosen
+  endpoint. Unreliable in both directions: a 1x1 test image can produce
+  `502 invalid response from model` from a *valid* key (the model genuinely
+  cannot read it), and on the Gemini path a rejected key is indistinguishable
+  from an outage anyway (see [Error handling](#error-handling)). It would also
+  consume one of the 10 requests/min budget. The key is saved as entered; a bad
+  key surfaces on the next scan with a specific message.
+- **An inline bottom sheet** for key entry, instead of a screen. Cramped once
+  provider chips, a masked field, and error text share the space, and
+  inconsistent with `/edit-profile` and `/goals-diet`, which are both routes.
 
 ## Data model
 
@@ -134,13 +149,38 @@ Two decisions worth recording:
 
 ## Components
 
-Nine files: seven new (the model above, plus the six below) and two rewired
-screens.
+Thirteen files: nine new (the model above, plus the eight below) and four
+rewired.
+
+### `lib/features/food_log/api_credentials.dart`
+
+One small unit owning the two secure-storage keys that both the vision call and
+the Settings screen depend on:
+
+```dart
+class ApiCredentials { final String provider; final String key; }
+
+abstract class ApiCredentialStore {
+  Future<ApiCredentials?> read();          // null when either is absent
+  Future<void> write(ApiCredentials c);
+}
+```
+
+Concrete implementation wraps `FlutterSecureStorage`; the interface is the seam
+`FoodAnalysisClient` is tested against.
+
+This exists because `'api_key'` and `'api_provider'` are currently raw string
+literals in two places (`session_provider.dart:190-191` writing them,
+`session_provider.dart:40-41` deleting them on logout), and this change adds a
+third writer and a first reader. Four copies of a magic string is how one of
+them drifts. The store owns the names as constants; `completeOnboarding` and
+`clearSession` are updated to reference those constants rather than being
+rewritten. That is the only change this design makes to existing auth code.
 
 ### `lib/features/food_log/food_analysis_client.dart`
 
-Reads `api_provider` and `api_key` from `FlutterSecureStorage` (written at
-onboarding, `session_provider.dart:190`) plus the Firebase `uid`, then routes:
+Reads the stored credentials through `ApiCredentialStore` plus the Firebase
+`uid`, then routes:
 
 | stored `api_provider` | endpoint | key header |
 |---|---|---|
@@ -170,8 +210,8 @@ String get baseUrl => _configured.isNotEmpty
 `String.fromEnvironment` returns `''` when the define is absent, which is what
 selects the platform default.
 
-Dependencies are injected through narrow seams (an `http.Client`, a
-credential-store interface, and a uid accessor) so the client is testable
+Dependencies are injected through narrow seams (an `http.Client`, the
+`ApiCredentialStore` above, and a uid accessor) so the client is testable
 without a device — the same approach `HealthRepository` takes with
 `HealthGateway` and `HealthKeyValueStore`.
 
@@ -221,6 +261,33 @@ takes typed arguments (`initialName`, `initialNutrients`, `source`).
 
 Validation at save time: `name` non-empty, `calories > 0`. Macros may be zero.
 
+### `lib/screens/settings/api_key_screen.dart`
+
+Reached from the existing ROTATE API KEY card in Settings
+(`settings_screen.dart:250`, currently `onPressed: () {}`). Registered as a
+named route `/api-key`, matching `/edit-profile` and `/goals-diet` — unlike the
+entry form it takes no arguments, so a named route is the consistent choice
+here.
+
+Contents: the same three-way provider selector as onboarding
+(`profile_init_screen.dart:223`), a masked key field with a reveal toggle, a
+line showing which provider is currently configured, and SAVE. SAVE writes both
+values through `ApiCredentialStore` and pops.
+
+The existing key field is **never pre-filled with the stored key**. Displaying a
+secret that is already saved buys nothing — the user cannot act on seeing it —
+and puts it on screen where it can be shoulder-surfed or screenshotted. An
+empty field with "currently set · GEMINI" beneath conveys the state that
+matters. Saving an empty field is rejected rather than clearing the credential.
+
+Two copy fixes in `settings_screen.dart` while wiring the button:
+
+- *"Current key expires in 23 days. Rotation recommended."* is **fabricated**.
+  These are user-supplied provider keys and the app has no expiry information
+  about them. It becomes the provider actually in use, read from the store.
+- `'ROTATE API KEY'` becomes `'API KEY'`, since the flow also serves first-time
+  entry and correcting a typo, not only rotation.
+
 ### Rewires
 
 - `lib/screens/vision/ai_vision_screen.dart` — CAPTURE and GALLERY become
@@ -229,10 +296,14 @@ Validation at save time: `name` non-empty, `calories > 0`. Macros may be zero.
 - `lib/screens/food_log/manual_food_log_screen.dart` — the `Icons.add` button
   (`manual_food_log_screen.dart:76`) opens the blank form; `HISTORY` reads
   `recentFoodLogProvider`, grouped by day.
+- `lib/screens/settings/settings_screen.dart` — ROTATE KEY pushes `/api-key`;
+  copy fixes above.
+- `lib/app/routes.dart` — registers `/api-key` only. The entry form is pushed
+  via `MaterialPageRoute` because it takes typed arguments.
 
-Both screens read the same provider and differ only in rendering: the vision
-tab shows a short recent list, the history screen shows the full 72h grouped
-by day.
+Both food screens read the same provider and differ only in rendering: the
+vision tab shows a short recent list, the history screen shows the full window
+grouped by day.
 
 ## Data flow
 
@@ -275,15 +346,19 @@ Each condition maps to one `FoodAnalysisException` kind:
 
 | Condition | Surfaced as |
 |---|---|
-| No `api_key` / `api_provider` in secure storage | "NO API KEY — COMPLETE ONBOARDING" |
+| No `api_key` / `api_provider` in secure storage | "NO API KEY — SET ONE IN SETTINGS" |
 | No signed-in `uid` | Guarded client-side, never sent (nginx would 400) |
 | nginx `429` | "RATE LIMIT — 10 SCANS/MIN, WAIT A MOMENT" |
-| `502 provider error: 401/403` | "API KEY REJECTED" |
+| `502 provider error: 401/403` | "API KEY REJECTED — UPDATE IT IN SETTINGS" |
 | `502` otherwise | "PROVIDER FAILED — RETRY OR ENTER MANUALLY" |
 | `502 invalid response from model` | "COULDN'T READ THAT PHOTO — ENTER MANUALLY" |
 | `SocketException` / timeout | "CAN'T REACH ANALYSIS SERVICE" |
 | Picker returns `null` (user cancelled) | Silent no-op |
 | `PlatformException` from picker | "PERMISSION DENIED — ENABLE IN SETTINGS" |
+
+Both credential messages now point at a screen that can actually fix the
+problem, which is the reason the API key screen is in this spec rather than
+deferred.
 
 Every failure path offers **manual entry as the fallback**, which is the
 payoff of the shared form: a failed scan is one tap from a working log rather
@@ -357,6 +432,11 @@ thing to be subtly wrong.
 **`test/food_quantity_stepper_test.dart`** — clamps at `0.5`, steps by `0.5`,
 caps at `20`, and the displayed total recomputes.
 
+**`test/api_key_screen_test.dart`** — a widget test over a fake
+`ApiCredentialStore`: saving writes both `provider` and `key`; an empty key is
+rejected without writing; the stored key is never rendered into the field; the
+currently-configured provider is preselected.
+
 **`FoodLogRepository` gets no test, deliberately.** Faking the Firestore SDK
 would need either a new dev dependency or an abstraction wider than the code
 it wraps. Instead the repository stays a humble object — thin SDK calls with
@@ -370,11 +450,14 @@ a photo, confirm the entry lands in history and survives a restart. Plus
 
 ## Known gaps
 
-- **`api_key` cannot be changed after onboarding.** It is only ever written at
-  `profile_init_screen.dart:348`; no Settings screen edits it. So
-  "API KEY REJECTED" is currently un-actionable without a reinstall. Adding a
-  Settings field is the obvious follow-up.
 - **A bad Gemini key is indistinguishable from a Gemini outage**, because both
-  become `502 "provider request failed"`. Distinguishing them would require a
-  microservice change.
-- **`FoodLogRepository` is untested**, as described above.
+  become `502 "provider request failed"` (`gemini.py:20` catches every
+  exception and re-raises one generic message). OpenRouter and NVIDIA are
+  better off: their upstream status is embedded in the detail string
+  (`provider error: 401`). Distinguishing the Gemini case would require a
+  microservice change, so a bad Gemini key reports "PROVIDER FAILED", not "KEY
+  REJECTED". The API key screen is reachable either way.
+- **A saved key is never verified**, so a typo is discovered on the next scan
+  rather than at save time. See the rejected alternative above for why
+  validating at save time is worse than it sounds.
+- **`FoodLogRepository` is untested**, as described in [Testing](#testing).
