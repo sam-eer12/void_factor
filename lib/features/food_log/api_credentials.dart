@@ -116,3 +116,26 @@ class SecureApiCredentialStore implements ApiCredentialStore {
 final apiCredentialStoreProvider = Provider<ApiCredentialStore>((ref) {
   return SecureApiCredentialStore();
 });
+
+/// What the two screens that render credential state need to know: which
+/// provider, and whether a key is actually there.
+///
+/// Carries no key. The API key screen never displays one and Settings only
+/// names the provider, so the secret has no reason to leave the store — and a
+/// status object that cannot hold it cannot leak it into a widget tree.
+typedef ApiCredentialStatus = ({String? provider, bool hasKey});
+
+/// Read by the API key screen and by the Settings card subtitle. Invalidate it
+/// after a write or a removal so both redraw.
+final apiCredentialStatusProvider =
+    FutureProvider<ApiCredentialStatus>((ref) async {
+  final store = ref.watch(apiCredentialStoreProvider);
+  final credentials = await store.read();
+  if (credentials != null) {
+    return (provider: credentials.provider, hasKey: true);
+  }
+  // `read()` also reports null for a half-written credential, so fall back to
+  // the provider alone: there is no usable key, but it still names the provider
+  // to preselect.
+  return (provider: await store.readProvider(), hasKey: false);
+});

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../app/routes.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_button.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/auth/session_provider.dart';
+import '../../features/food_log/api_credentials.dart';
 import '../dashboard/monolith_shell.dart';
 
 
@@ -228,7 +230,7 @@ class SettingsScreen extends ConsumerWidget {
                                   color: MonolithTheme.surface, size: 20),
                               const SizedBox(width: 12),
                               Text(
-                                'ROTATE API KEY',
+                                'API KEY',
                                 style:
                                     MonolithTheme.headlineMedium.copyWith(
                                   color: MonolithTheme.surface,
@@ -238,16 +240,18 @@ class SettingsScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'Current key expires in 23 days. Rotation recommended.',
+                            _keyStatusLine(ref.watch(
+                                apiCredentialStatusProvider)),
                             style: MonolithTheme.bodyMedium.copyWith(
                               color: MonolithTheme.surfaceContainerHigh,
                             ),
                           ),
                           const SizedBox(height: 16),
                           MonolithButton(
-                            label: 'ROTATE KEY',
+                            label: 'MANAGE KEY',
                             style: MonolithButtonStyle.secondary,
-                            onPressed: () {},
+                            onPressed: () => Navigator.pushNamed(
+                                context, AppRoutes.apiKey),
                           ),
                         ],
                       ),
@@ -300,6 +304,20 @@ class SettingsScreen extends ConsumerWidget {
     return value == value.roundToDouble()
         ? value.toInt().toString()
         : value.toString();
+  }
+
+  // The card previously claimed the key expired in 23 days. These are keys the
+  // user supplies from their own provider console and the app is told nothing
+  // about their lifetime, so it says what it actually knows instead.
+  String _keyStatusLine(AsyncValue<ApiCredentialStatus> status) {
+    return switch (status) {
+      AsyncData(value: (provider: final provider, hasKey: true)) =>
+        'Using $provider for food analysis.',
+      AsyncData() => 'No key set. Food analysis is unavailable until you add '
+          'one.',
+      AsyncError() => "Couldn't read the saved key.",
+      _ => 'Checking…',
+    };
   }
 
   Widget _buildProfileStat(String label, String value) {
