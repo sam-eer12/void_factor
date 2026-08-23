@@ -174,4 +174,26 @@ void main() {
       );
     });
   });
+
+  group('timeLabel', () {
+    test('reads a morning time on a 12-hour clock', () {
+      expect(foodLogTimeLabel(DateTime(2026, 8, 23, 8, 15)), '08:15 AM');
+    });
+
+    test('reads an afternoon time on a 12-hour clock', () {
+      expect(foodLogTimeLabel(DateTime(2026, 8, 23, 19, 45)), '07:45 PM');
+    });
+
+    test('calls midnight 12 AM rather than 0 AM', () {
+      expect(foodLogTimeLabel(DateTime(2026, 8, 23, 0, 5)), '12:05 AM');
+    });
+
+    test('calls noon 12 PM rather than 0 PM', () {
+      expect(foodLogTimeLabel(DateTime(2026, 8, 23, 12, 30)), '12:30 PM');
+    });
+
+    test('pads a single-digit minute', () {
+      expect(foodLogTimeLabel(DateTime(2026, 8, 23, 9, 5)), '09:05 AM');
+    });
+  });
 }

@@ -84,3 +84,18 @@ String _labelFor(DateTime day, DateTime today) {
       return '$daysBack DAYS AGO';
   }
 }
+
+/// The clock time an entry was logged, as `'08:15 AM'`.
+///
+/// Both food screens label a row with its day and time, so the formatting lives
+/// next to the day labels rather than being written twice. Hand-rolled instead
+/// of pulling in `intl`: this is one fixed format, not localisation, and the
+/// 12-hour clock here matches the rest of the app's copy.
+String foodLogTimeLabel(DateTime at) {
+  // Hour 0 and hour 12 both read as 12 on a 12-hour clock — the modulo alone
+  // would render midnight as "00:05 AM".
+  final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
+  final suffix = at.hour < 12 ? 'AM' : 'PM';
+  return '${hour.toString().padLeft(2, '0')}:'
+      '${at.minute.toString().padLeft(2, '0')} $suffix';
+}
