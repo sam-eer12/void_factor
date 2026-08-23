@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../../models/food_entry.dart';
@@ -219,9 +218,3 @@ class FoodAnalysisClient {
   static String _trimTrailingSlash(String url) =>
       url.endsWith('/') ? url.substring(0, url.length - 1) : url;
 }
-
-final foodAnalysisClientProvider = Provider<FoodAnalysisClient>((ref) {
-  return FoodAnalysisClient(
-    credentialStore: ref.watch(apiCredentialStoreProvider),
-  );
-});
