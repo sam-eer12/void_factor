@@ -4,4 +4,9 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- The food analysis microservice runs over plain HTTP on the developer's
+         machine, reached at 10.0.2.2:8080 from the emulator. Cleartext is opened
+         in the debug source set only, so a release build still cannot make an
+         unencrypted request. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>
