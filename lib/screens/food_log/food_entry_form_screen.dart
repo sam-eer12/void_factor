@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/food_log/food_analysis_client.dart';
+import '../../features/food_log/food_log_grouping.dart';
 import '../../features/food_log/food_log_providers.dart';
 import '../../models/food_entry.dart';
 import '../../theme/monolith_theme.dart';
@@ -92,10 +93,9 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
   /// the user can type straight into it instead of clearing a placeholder first.
   static String _seed(double value) => value == 0 ? '' : _format(value);
 
-  /// Trims a pointless decimal: `45.0` reads `45`, `7.5` stays `7.5`.
-  static String _format(double value) => value == value.roundToDouble()
-      ? value.toStringAsFixed(0)
-      : value.toStringAsFixed(1);
+  /// Trims a pointless decimal: `45.0` reads `45`, `7.5` stays `7.5`. Shared with
+  /// the two log lists so the same figure never renders two ways.
+  static String _format(double value) => foodLogAmountLabel(value);
 
   static double _parse(String raw) => double.tryParse(raw.trim()) ?? 0;
 

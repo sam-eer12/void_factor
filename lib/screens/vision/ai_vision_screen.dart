@@ -7,7 +7,7 @@ import '../../features/food_log/food_log_grouping.dart';
 import '../../features/food_log/food_log_providers.dart';
 import '../../models/food_entry.dart';
 import '../../theme/monolith_theme.dart';
-import '../../widgets/monolith_card.dart';
+import '../../widgets/food_log_row.dart';
 import '../dashboard/monolith_shell.dart';
 import '../food_log/food_entry_form_screen.dart';
 
@@ -327,55 +327,9 @@ class AiVisionScreen extends ConsumerWidget {
         ),
       );
 
-  Widget _logRow(String dayLabel, FoodEntry entry) {
-    return MonolithCard(
-      hasShadow: false,
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: MonolithTheme.primary,
-              border: Border.all(
-                  color: MonolithTheme.primary,
-                  width: MonolithTheme.borderWidth),
-            ),
-            child: Icon(
-              entry.source == FoodSource.vision
-                  ? Icons.center_focus_strong
-                  : Icons.restaurant,
-              color: MonolithTheme.surface,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(entry.name.toUpperCase(),
-                    style: MonolithTheme.labelLarge),
-                const SizedBox(height: 2),
-                Text(
-                  '$dayLabel · ${foodLogTimeLabel(entry.loggedAt)}',
-                  style: MonolithTheme.labelSmall
-                      .copyWith(color: MonolithTheme.outline),
-                ),
-              ],
-            ),
-          ),
-          // The total, not the per-serving figure: what was eaten is the number
-          // that belongs in a log.
-          Text('${_kcal(entry.totalCalories)} KCAL',
-              style: MonolithTheme.headlineMedium),
-        ],
-      ),
-    );
-  }
-
-  static String _kcal(double value) => value == value.roundToDouble()
-      ? value.toStringAsFixed(0)
-      : value.toStringAsFixed(1);
+  Widget _logRow(String dayLabel, FoodEntry entry) => FoodLogRow(
+        entry: entry,
+        // This list has no day headers, so the row carries the day itself.
+        subtitle: '$dayLabel · ${foodLogTimeLabel(entry.loggedAt)}',
+      );
 }

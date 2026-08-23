@@ -99,3 +99,13 @@ String foodLogTimeLabel(DateTime at) {
   return '${hour.toString().padLeft(2, '0')}:'
       '${at.minute.toString().padLeft(2, '0')} $suffix';
 }
+
+/// A calorie or macro figure as a row displays it: `750`, `7.5`, `33.3`.
+///
+/// A whole number loses its decimal point, and everything else keeps one place.
+/// A serving multiplier makes thirds easy to reach, and the raw `33.333333333`
+/// would push the rest of a row off screen.
+String foodLogAmountLabel(double value) => value == value.roundToDouble()
+    ? value.toStringAsFixed(0)
+    : value.toStringAsFixed(1);
+

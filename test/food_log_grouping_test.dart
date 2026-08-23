@@ -196,4 +196,24 @@ void main() {
       expect(foodLogTimeLabel(DateTime(2026, 8, 23, 9, 5)), '09:05 AM');
     });
   });
+
+  group('amountLabel', () {
+    test('drops a pointless decimal', () {
+      expect(foodLogAmountLabel(750), '750');
+    });
+
+    test('keeps a real fraction', () {
+      expect(foodLogAmountLabel(7.5), '7.5');
+    });
+
+    test('rounds to one place rather than spilling digits', () {
+      // A serving multiplier makes thirds easy to reach, and '33.333333' in a
+      // row would push the rest of the line off screen.
+      expect(foodLogAmountLabel(100 / 3), '33.3');
+    });
+
+    test('writes zero as a digit, not an empty string', () {
+      expect(foodLogAmountLabel(0), '0');
+    });
+  });
 }

@@ -1,13 +1,27 @@
 import 'package:flutter/material.dart';
-import '../../theme/monolith_theme.dart';
-import '../../widgets/monolith_card.dart';
-import '../../widgets/monolith_bottom_nav.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class ManualFoodLogScreen extends StatelessWidget {
+import '../../features/food_log/food_log_grouping.dart';
+import '../../features/food_log/food_log_providers.dart';
+import '../../models/food_entry.dart';
+import '../../theme/monolith_theme.dart';
+import '../../widgets/food_log_row.dart';
+import '../../widgets/monolith_bottom_nav.dart';
+import 'food_entry_form_screen.dart';
+
+/// The full log window, grouped by day, plus the way in to a manual entry.
+///
+/// Reads the same provider as the vision tab and differs only in rendering: this
+/// screen shows every entry in the window under a header per day, where the tab
+/// shows the newest few.
+class ManualFoodLogScreen extends ConsumerWidget {
   const ManualFoodLogScreen({super.key});
 
+  static const String emptyLogLabel = 'NOTHING LOGGED YET';
+  static const String logUnavailableLabel = "COULDN'T READ YOUR LOG";
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: MonolithTheme.background,
       extendBody: true,
@@ -15,145 +29,16 @@ class ManualFoodLogScreen extends StatelessWidget {
         bottom: false,
         child: Column(
           children: [
-            // ── Top Bar ──
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: const BoxDecoration(
-                color: MonolithTheme.surface,
-                border: Border(
-                  bottom: BorderSide(
-                    color: MonolithTheme.primary,
-                    width: MonolithTheme.borderWidth,
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: MonolithTheme.containerDecoration,
-                      child: const Icon(Icons.arrow_back,
-                          color: MonolithTheme.primary, size: 22),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Text('MONOLITH FITNESS',
-                      style: MonolithTheme.headlineLarge),
-                ],
-              ),
-            ),
-
+            _topBar(context),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ── Header ──
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('HISTORY',
-                                style: MonolithTheme.displayMedium),
-                            Text(
-                              'LAST 72H',
-                              style: MonolithTheme.labelMedium.copyWith(
-                                color: MonolithTheme.outline,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: MonolithTheme.invertedCardDecoration
-                              .copyWith(boxShadow: []),
-                          child: const Icon(Icons.add,
-                              color: MonolithTheme.surface, size: 24),
-                        ),
-                      ],
-                    ),
+                    _header(context),
                     const SizedBox(height: 24),
-
-                    // ── Today ──
-                    _buildDayHeader('TODAY'),
-                    const SizedBox(height: 12),
-                    _buildFoodItem(
-                      'Grilled Chicken Breast',
-                      '330 kcal',
-                      '42g protein',
-                      '12:45 PM',
-                      Icons.restaurant,
-                    ),
-                    const SizedBox(height: 8),
-                    _buildFoodItem(
-                      'Whey Protein Shake',
-                      '280 kcal',
-                      '35g protein',
-                      '08:30 AM',
-                      Icons.local_drink,
-                    ),
-                    const SizedBox(height: 8),
-                    _buildFoodItem(
-                      'Oatmeal & Banana',
-                      '380 kcal',
-                      '12g protein',
-                      '07:15 AM',
-                      Icons.breakfast_dining,
-                    ),
-                    const SizedBox(height: 24),
-
-                    // ── Yesterday ──
-                    _buildDayHeader('YESTERDAY'),
-                    const SizedBox(height: 12),
-                    _buildFoodItem(
-                      'Salmon & Brown Rice',
-                      '520 kcal',
-                      '38g protein',
-                      '07:30 PM',
-                      Icons.set_meal,
-                    ),
-                    const SizedBox(height: 8),
-                    _buildFoodItem(
-                      'Caesar Salad',
-                      '290 kcal',
-                      '18g protein',
-                      '12:00 PM',
-                      Icons.eco,
-                    ),
-                    const SizedBox(height: 8),
-                    _buildFoodItem(
-                      'Eggs & Toast',
-                      '340 kcal',
-                      '22g protein',
-                      '08:00 AM',
-                      Icons.egg,
-                    ),
-                    const SizedBox(height: 24),
-
-                    // ── 2 Days Ago ──
-                    _buildDayHeader('2 DAYS AGO'),
-                    const SizedBox(height: 12),
-                    _buildFoodItem(
-                      'Chicken Stir Fry',
-                      '480 kcal',
-                      '35g protein',
-                      '08:00 PM',
-                      Icons.rice_bowl,
-                    ),
-                    const SizedBox(height: 8),
-                    _buildFoodItem(
-                      'Greek Yogurt',
-                      '180 kcal',
-                      '15g protein',
-                      '03:30 PM',
-                      Icons.icecream,
-                    ),
+                    _history(ref),
                     const SizedBox(height: 20),
                   ],
                 ),
@@ -179,72 +64,131 @@ class ManualFoodLogScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildDayHeader(String day) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: MonolithTheme.primary,
-      child: Text(
-        day,
-        style: MonolithTheme.labelLarge.copyWith(
+  Widget _topBar(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        decoration: const BoxDecoration(
           color: MonolithTheme.surface,
+          border: Border(
+            bottom: BorderSide(
+              color: MonolithTheme.primary,
+              width: MonolithTheme.borderWidth,
+            ),
+          ),
         ),
-      ),
-    );
-  }
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: MonolithTheme.containerDecoration,
+                child: const Icon(Icons.arrow_back,
+                    color: MonolithTheme.primary, size: 22),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Text('MONOLITH FITNESS', style: MonolithTheme.headlineLarge),
+          ],
+        ),
+      );
 
-  Widget _buildFoodItem(
-    String name,
-    String calories,
-    String macro,
-    String time,
-    IconData icon,
-  ) {
-    return MonolithCard(
-      hasShadow: false,
-      padding: const EdgeInsets.all(16),
-      child: Row(
+  Widget _header(BuildContext context) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: MonolithTheme.primary,
-                width: MonolithTheme.borderWidth,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('HISTORY', style: MonolithTheme.displayMedium),
+              Text(
+                // Three calendar days, which is what `groupByDay` buckets — the
+                // subtitle used to say 72 rolling hours, which it never was.
+                'LAST $foodLogWindowDays DAYS',
+                style: MonolithTheme.labelMedium
+                    .copyWith(color: MonolithTheme.outline),
+              ),
+            ],
+          ),
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    const FoodEntryFormScreen(source: FoodSource.manual),
               ),
             ),
-            child: Icon(icon, color: MonolithTheme.primary, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name.toUpperCase(),
-                    style: MonolithTheme.labelLarge),
-                const SizedBox(height: 2),
-                Text(
-                  '$macro · $time',
-                  style: MonolithTheme.labelSmall.copyWith(
-                    color: MonolithTheme.outline,
-                  ),
-                ),
-              ],
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration:
+                  MonolithTheme.invertedCardDecoration.copyWith(boxShadow: []),
+              child: const Icon(Icons.add,
+                  color: MonolithTheme.surface, size: 24),
             ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: MonolithTheme.primary,
-                width: MonolithTheme.borderWidth,
-              ),
-            ),
-            child: Text(calories, style: MonolithTheme.labelMedium),
           ),
         ],
-      ),
-    );
+      );
+
+  Widget _history(WidgetRef ref) {
+    return ref.watch(recentFoodLogProvider).when(
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: CircularProgressIndicator.adaptive(
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(MonolithTheme.primary),
+              ),
+            ),
+          ),
+          error: (_, _) => _notice(logUnavailableLabel),
+          data: (entries) {
+            final groups = groupByDay(entries, now: DateTime.now());
+            if (groups.isEmpty) return _notice(emptyLogLabel);
+
+            return Column(
+              children: [
+                for (final (index, group) in groups.indexed) ...[
+                  if (index > 0) const SizedBox(height: 24),
+                  _dayHeader(group.label),
+                  const SizedBox(height: 12),
+                  for (final (row, entry) in group.entries.indexed) ...[
+                    if (row > 0) const SizedBox(height: 8),
+                    _logRow(entry),
+                  ],
+                ],
+              ],
+            );
+          },
+        );
   }
+
+  Widget _dayHeader(String day) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        color: MonolithTheme.primary,
+        child: Text(
+          day,
+          style: MonolithTheme.labelLarge.copyWith(
+            color: MonolithTheme.surface,
+          ),
+        ),
+      );
+
+  Widget _notice(String message) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
+        decoration: MonolithTheme.cardDecoration,
+        child: Text(
+          message,
+          textAlign: TextAlign.center,
+          style:
+              MonolithTheme.labelMedium.copyWith(color: MonolithTheme.outline),
+        ),
+      );
+
+  Widget _logRow(FoodEntry entry) => FoodLogRow(
+        entry: entry,
+        // The day is already the header above, so the row spends its second
+        // line on protein instead of repeating it.
+        subtitle: '${foodLogAmountLabel(entry.totalProteinG)}G PROTEIN · '
+            '${foodLogTimeLabel(entry.loggedAt)}',
+      );
 }
