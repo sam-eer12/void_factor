@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../models/user_profile.dart';
 import 'auth_provider.dart';
+import '../food_log/api_credentials.dart';
 import '../profile/profile_repository.dart';
 
 class SessionService {
@@ -37,8 +38,8 @@ class SessionService {
     await _secureStorage.delete(key: _sessionIdKey);
     await _secureStorage.delete(key: _lastActivityKey);
     await _secureStorage.delete(key: _profileCompletedKey);
-    await _secureStorage.delete(key: 'api_key');
-    await _secureStorage.delete(key: 'api_provider');
+    await _secureStorage.delete(key: ApiCredentialStore.keyKey);
+    await _secureStorage.delete(key: ApiCredentialStore.providerKey);
     // Drop cached health data + the connection flag so the next user starts
     // disconnected and can't read the prior user's metrics.
     await _secureStorage.delete(key: 'health_metrics_json');
@@ -187,8 +188,9 @@ class SessionService {
     await _profileRepository.save(profile);
 
     // 3. API credentials remain local-only (never sent to Firestore).
-    await _secureStorage.write(key: 'api_key', value: apiKey);
-    await _secureStorage.write(key: 'api_provider', value: apiProvider);
+    await _secureStorage.write(key: ApiCredentialStore.keyKey, value: apiKey);
+    await _secureStorage.write(
+        key: ApiCredentialStore.providerKey, value: apiProvider);
 
     // 4. Session bookkeeping.
     await _secureStorage.write(key: _sessionIdKey, value: newSessionId);
