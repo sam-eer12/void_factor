@@ -4,10 +4,12 @@ import '../../app/routes.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_button.dart';
+import '../../features/auth/account_deletion.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/auth/session_provider.dart';
 import '../../features/food_log/api_credentials.dart';
 import '../dashboard/monolith_shell.dart';
+import 'delete_account_dialog.dart';
 
 
 class SettingsScreen extends ConsumerWidget {
@@ -281,7 +283,7 @@ class SettingsScreen extends ConsumerWidget {
                           MonolithButton(
                             label: 'DELETE ACCOUNT',
                             style: MonolithButtonStyle.tertiary,
-                            onPressed: () {},
+                            onPressed: () => _deleteAccount(context, ref),
                           ),
                         ],
                       ),
@@ -295,6 +297,32 @@ class SettingsScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Confirms, deletes, and reports whatever came back.
+  ///
+  /// A `deleted` outcome needs nothing said: `performAccountDeletion` has already
+  /// replaced this screen with the login screen, and a SnackBar would be
+  /// congratulating the user on a screen they never asked to see.
+  Future<void> _deleteAccount(BuildContext context, WidgetRef ref) async {
+    if (!await DeleteAccountDialog.show(context) || !context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await performAccountDeletion(context, ref);
+
+    final message = switch (result.outcome) {
+      DeletionOutcome.deleted => null,
+      // Backing out of the Google prompt is a decision, like a cancelled
+      // picker: nothing was touched and nothing needs saying.
+      DeletionOutcome.reauthCancelled => null,
+      DeletionOutcome.needsRelogin => AccountDeletionService.needsReloginMessage,
+      DeletionOutcome.failed => result.message,
+    };
+    if (message == null) return;
+
+    // The captured messenger, not a fresh lookup: this screen may already be
+    // gone, and a SnackBar shown through a dead context would be dropped.
+    messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 
   // Formats a metric for display: 0 (unset) shows as '--', whole numbers drop
