@@ -109,6 +109,17 @@ class _OnDeviceModelScreenState extends ConsumerState<OnDeviceModelScreen> {
     setState(() => _isBusy = false);
   }
 
+  Future<void> _downloadModel() async {
+    setState(() => _isBusy = true);
+    try {
+      await ref.read(gemmaModelProvider.notifier).download();
+    } finally {
+      if (mounted) {
+        setState(() => _isBusy = false);
+      }
+    }
+  }
+
   Future<bool?> _confirm({
     required String title,
     required String body,
@@ -237,6 +248,20 @@ class _OnDeviceModelScreenState extends ConsumerState<OnDeviceModelScreen> {
                         style: MonolithTheme.bodyMedium
                             .copyWith(color: MonolithTheme.outline),
                       ),
+                      if (model.value?.stage == GemmaModelStage.notInstalled) ...[
+                        const SizedBox(height: 16),
+                        MonolithButton(
+                          label: 'DOWNLOAD MODEL',
+                          onPressed: _isBusy ? null : _downloadModel,
+                        ),
+                      ],
+                      if (model.value?.stage == GemmaModelStage.failed) ...[
+                        const SizedBox(height: 16),
+                        MonolithButton(
+                          label: 'TRY AGAIN',
+                          onPressed: _isBusy ? null : _downloadModel,
+                        ),
+                      ],
                       if (model.value?.isReady == true) ...[
                         const SizedBox(height: 16),
                         MonolithButton(
@@ -305,10 +330,9 @@ class _OnDeviceModelScreenState extends ConsumerState<OnDeviceModelScreen> {
           GemmaModelStage.downloading =>
             'Downloading — ${state.progress}% complete.',
           GemmaModelStage.needsToken =>
-            'Not installed. Save a token above, then download it from the '
-                'projections screen.',
+            'Not installed. Save a token above, then download the model.',
           GemmaModelStage.notInstalled =>
-            'Not installed. Download it from the projections screen.',
+            'Not installed. Ready to download (about half a gigabyte).',
           GemmaModelStage.failed =>
             state.message ?? 'The last download attempt failed.',
         },
