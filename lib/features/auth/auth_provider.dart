@@ -10,6 +10,7 @@ import 'session_provider.dart';
 import '../food_log/food_log_store.dart';
 import '../health/health_background_service.dart';
 import '../health/health_providers.dart';
+import '../weight_log/weight_log_store.dart';
 
 final authStateProvider = StreamProvider<User?>((ref) {
   return FirebaseAuth.instance.authStateChanges();
@@ -282,6 +283,13 @@ final accountDeletionServiceProvider = Provider<AccountDeletionService>((ref) {
     deleteLogFile: (uid) async {
       final dir = await getApplicationDocumentsDirectory();
       await FoodLogStore(dir: dir, uid: uid).delete();
+    },
+    // A separate step from the food log rather than two deletes in one
+    // callback: they are independent files, and the teardown's contract is that
+    // one failing step never takes the remaining ones with it.
+    deleteWeightLogFile: (uid) async {
+      final dir = await getApplicationDocumentsDirectory();
+      await WeightLogStore(dir: dir, uid: uid).delete();
     },
     clearSession: () => ref.read(sessionServiceProvider).clearSession(),
     clearSignInHints: () async {

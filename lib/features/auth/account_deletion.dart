@@ -53,6 +53,7 @@ class AccountDeletionService {
     required Future<void> Function(String uid) remoteDelete,
     required Future<void> Function() authDelete,
     required Future<void> Function(String uid) deleteLogFile,
+    required Future<void> Function(String uid) deleteWeightLogFile,
     required Future<void> Function() clearSession,
     required Future<void> Function() clearSignInHints,
     required Future<void> Function() cancelBackgroundWork,
@@ -62,6 +63,7 @@ class AccountDeletionService {
         _remoteDelete = remoteDelete,
         _authDelete = authDelete,
         _deleteLogFile = deleteLogFile,
+        _deleteWeightLogFile = deleteWeightLogFile,
         _clearSession = clearSession,
         _clearSignInHints = clearSignInHints,
         _cancelBackgroundWork = cancelBackgroundWork;
@@ -72,6 +74,7 @@ class AccountDeletionService {
   final Future<void> Function(String uid) _remoteDelete;
   final Future<void> Function() _authDelete;
   final Future<void> Function(String uid) _deleteLogFile;
+  final Future<void> Function(String uid) _deleteWeightLogFile;
   final Future<void> Function() _clearSession;
   final Future<void> Function() _clearSignInHints;
   final Future<void> Function() _cancelBackgroundWork;
@@ -98,9 +101,9 @@ class AccountDeletionService {
   /// other than [DeletionOutcome.deleted].
   Future<DeletionResult> deleteAccount() async {
     // Held in a local for the rest of the method. A successful auth delete
-    // clears `currentUser`, and the log file is named for the uid — read it back
-    // from the SDK afterwards and the teardown silently erases nothing, leaving
-    // the deleted account's meals on disk.
+    // clears `currentUser`, and the log files are named for the uid — read it
+    // back from the SDK afterwards and the teardown silently erases nothing,
+    // leaving the deleted account's meals and weight history on disk.
     final uid = _currentUid();
     if (uid == null) {
       return (outcome: DeletionOutcome.failed, message: errorNotSignedIn);
@@ -167,6 +170,7 @@ class AccountDeletionService {
   Future<void> _tearDownLocalData(String uid) async {
     for (final step in [
       () => _deleteLogFile(uid),
+      () => _deleteWeightLogFile(uid),
       _clearSession,
       _clearSignInHints,
       _cancelBackgroundWork,
