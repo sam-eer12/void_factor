@@ -6,7 +6,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../models/user_profile.dart';
 import 'auth_provider.dart';
 import '../food_log/api_credentials.dart';
+import '../health/health_repository.dart';
 import '../profile/profile_repository.dart';
+import '../projection/hf_token_store.dart';
 
 class SessionService {
   SessionService(this._profileRepository);
@@ -40,10 +42,20 @@ class SessionService {
     await _secureStorage.delete(key: _profileCompletedKey);
     await _secureStorage.delete(key: ApiCredentialStore.keyKey);
     await _secureStorage.delete(key: ApiCredentialStore.providerKey);
+    // The model token is this user's HuggingFace credential, so it leaves with
+    // them — on a shared device the next user must not be able to download
+    // against it. The downloaded model file itself deliberately stays: it holds
+    // nothing personal, and re-fetching half a gigabyte per login would be
+    // hostile.
+    await _secureStorage.delete(key: HuggingFaceTokenStore.tokenKey);
     // Drop cached health data + the connection flag so the next user starts
-    // disconnected and can't read the prior user's metrics.
-    await _secureStorage.delete(key: 'health_metrics_json');
-    await _secureStorage.delete(key: 'health_enabled');
+    // disconnected and can't read the prior user's metrics. Named via the
+    // repository's constants rather than repeated literals — four copies of a
+    // key is how one of them drifts.
+    await _secureStorage.delete(key: HealthRepository.metricsKey);
+    await _secureStorage.delete(key: HealthRepository.enabledKey);
+    await _secureStorage.delete(key: HealthRepository.energyWindowKey);
+    await _secureStorage.delete(key: HealthRepository.authorizedTypesVersionKey);
     // Drop the mirrored profile blob so the next user can't read stale data.
     await _profileRepository.clearLocal();
   }

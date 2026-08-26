@@ -213,6 +213,14 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                     _buildSettingsTile(
+                      Icons.memory,
+                      'ON-DEVICE MODEL',
+                      'Wording for your recommendations',
+                      () => Navigator.pushNamed(
+                          context, AppRoutes.onDeviceModel),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildSettingsTile(
                       Icons.shield_outlined,
                       'PRIVACY',
                       'Data management & export',
