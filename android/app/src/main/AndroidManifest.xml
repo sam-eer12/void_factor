@@ -3,6 +3,10 @@
     <uses-permission android:name="android.permission.health.READ_STEPS"/>
     <uses-permission android:name="android.permission.health.READ_HYDRATION"/>
     <uses-permission android:name="android.permission.health.READ_EXERCISE"/>
+    <!-- Active energy drives the projection's burn side. Added after the first
+         three, so an already-connected user must re-grant; HealthRepository's
+         authorized-types version is what detects that. -->
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED"/>
     <application
         android:label="void_factor"
         android:name="${applicationName}"

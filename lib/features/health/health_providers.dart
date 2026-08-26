@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../models/energy_window.dart';
 import '../../models/health_metrics.dart';
 import 'health_repository.dart';
 import 'health_observer_service.dart';
@@ -110,4 +111,33 @@ class HealthMetricsController extends Notifier<HealthMetrics> {
 final healthMetricsProvider =
     NotifierProvider<HealthMetricsController, HealthMetrics>(() {
   return HealthMetricsController();
+});
+
+/// Whether a connected user's grant predates the current health type list.
+///
+/// Watches [healthStatusProvider] so connecting or disconnecting re-runs it.
+/// The projections screen and the Health Connect screen both read this to offer
+/// a re-authorize prompt; without it an existing user keeps reading
+/// `activeKcal: 0` and never learns why their projection looks wrong.
+final healthNeedsReauthorizationProvider = FutureProvider<bool>((ref) async {
+  ref.watch(healthStatusProvider);
+  return ref.read(healthRepositoryProvider).needsReauthorization();
+});
+
+/// The last two weeks of daily activity, for the projection's burn side.
+///
+/// Deliberately *not* refreshed on [healthRefreshInterval]. The home cards show
+/// today and need a 4-minute cadence; a 14-day mean barely moves in four
+/// minutes, and re-reading it would mean 14 aggregation calls per tick.
+/// Invalidate it explicitly when a screen wants fresher activity.
+///
+/// Falls back to the cached window when health is off, so the projection can
+/// still say what it knows instead of failing.
+final energyWindowProvider = FutureProvider<EnergyWindow>((ref) async {
+  ref.watch(healthStatusProvider);
+  final repository = ref.read(healthRepositoryProvider);
+  if (!await repository.isEnabled()) {
+    return repository.loadCachedEnergyWindow();
+  }
+  return repository.readEnergyWindow();
 });
