@@ -1,4 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Network permissions for model download and backend API -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Only makes the download's foreground-service notification visible. The
+         service runs either way, so a refusal costs the user the progress bar,
+         not the download. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Health Connect read-only permissions -->
     <uses-permission android:name="android.permission.health.READ_STEPS"/>
     <uses-permission android:name="android.permission.health.READ_HYDRATION"/>
@@ -62,6 +72,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- WorkManager's foreground service, declared with the dataSync type
+             Android 14+ requires. background_downloader runs the model download
+             through it; without this declaration foreground mode cannot start
+             and the transfer is capped at nine minutes. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

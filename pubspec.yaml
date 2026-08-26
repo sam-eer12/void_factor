@@ -46,6 +46,11 @@ dependencies:
   flutter_image_compress: ^2.4.0
   http: ^1.6.0
   flutter_gemma: ^0.16.4
+  # Already present transitively through flutter_gemma, named here because the
+  # app configures it directly: the on-device model download needs a `running`
+  # notification set, without which the downloader ignores foreground mode and
+  # Android kills the half-gigabyte transfer at nine minutes.
+  background_downloader: ^9.5.5
   path_provider: ^2.1.5
   riverpod_annotation: ^4.0.2
   permission_handler: ^12.0.3
