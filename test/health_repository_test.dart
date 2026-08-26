@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_factor/features/health/health_repository.dart';
+import 'package:void_factor/models/energy_window.dart';
 import 'package:void_factor/models/health_metrics.dart';
 
 /// In-memory fake for the secure-storage seam.
@@ -22,6 +23,7 @@ class FakeGateway implements HealthGateway {
     this.available = true,
     this.authorized = true,
     this.throwOnRead = false,
+    this.energyDays = const [],
   });
   int steps;
   double waterMl;
@@ -29,6 +31,12 @@ class FakeGateway implements HealthGateway {
   bool available;
   bool authorized;
   bool throwOnRead;
+
+  /// What [dailyEnergy] hands back, verbatim.
+  List<DailyEnergy> energyDays;
+
+  /// Ranges [dailyEnergy] was asked for, so a test can assert the window bounds.
+  final List<({DateTime start, DateTime end})> energyRequests = [];
 
   @override
   Future<void> configure() async {}
@@ -52,6 +60,13 @@ class FakeGateway implements HealthGateway {
   Future<double> totalWorkoutSeconds(DateTime start, DateTime end) async {
     if (throwOnRead) throw Exception('read failed');
     return workoutSeconds;
+  }
+
+  @override
+  Future<List<DailyEnergy>> dailyEnergy(DateTime start, DateTime end) async {
+    energyRequests.add((start: start, end: end));
+    if (throwOnRead) throw Exception('read failed');
+    return energyDays;
   }
 }
 

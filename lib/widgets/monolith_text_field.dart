@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme/monolith_theme.dart';
 
 class MonolithTextField extends StatefulWidget {
@@ -11,6 +12,11 @@ class MonolithTextField extends StatefulWidget {
   final int maxLines;
   final Widget? suffixIcon;
 
+  /// Passed straight through to the underlying field. Kept optional because most
+  /// of the app's fields are free text; a numeric field needs to refuse letters
+  /// at the keystroke rather than at submit.
+  final List<TextInputFormatter>? inputFormatters;
+
   const MonolithTextField({
     super.key,
     required this.label,
@@ -21,6 +27,7 @@ class MonolithTextField extends StatefulWidget {
     this.validator,
     this.maxLines = 1,
     this.suffixIcon,
+    this.inputFormatters,
   });
 
   @override
@@ -75,6 +82,7 @@ class _MonolithTextFieldState extends State<MonolithTextField> {
             controller: widget.controller,
             obscureText: widget.obscureText,
             keyboardType: widget.keyboardType,
+            inputFormatters: widget.inputFormatters,
             validator: widget.validator,
             maxLines: widget.maxLines,
             style: MonolithTheme.bodyLarge.copyWith(

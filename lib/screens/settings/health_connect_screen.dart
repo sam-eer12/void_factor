@@ -23,6 +23,12 @@ class _HealthConnectScreenState extends ConsumerState<HealthConnectScreen> {
     final status = await ref.read(healthStatusProvider.notifier).enable();
     if (!mounted) return;
     setState(() => _busy = false);
+    // `enable()` leaves the status enum unchanged when the user was already
+    // connected, so a re-grant would not move any state the derived providers
+    // watch. Invalidated by hand, or a completed re-grant keeps showing the
+    // prompt that asked for it.
+    ref.invalidate(healthNeedsReauthorizationProvider);
+    ref.invalidate(energyWindowProvider);
     if (status == HealthConnectionStatus.unavailable) {
       _toast('Health services are not available on this device.');
     } else if (status == HealthConnectionStatus.disabled) {
@@ -46,6 +52,10 @@ class _HealthConnectScreenState extends ConsumerState<HealthConnectScreen> {
     final status = ref.watch(healthStatusProvider);
     final metrics = ref.watch(healthMetricsProvider);
     final connected = status == HealthConnectionStatus.enabled;
+    // Absent while the check is in flight — treated as "nothing to ask for", so
+    // the prompt appears once the answer is known rather than flickering.
+    final needsReauth =
+        ref.watch(healthNeedsReauthorizationProvider).value ?? false;
 
     return Scaffold(
       backgroundColor: MonolithTheme.background,
@@ -60,10 +70,14 @@ class _HealthConnectScreenState extends ConsumerState<HealthConnectScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _statusBanner(status),
+            if (connected && needsReauth) ...[
+              const SizedBox(height: 16),
+              _reauthorizeBanner(),
+            ],
             const SizedBox(height: 20),
             Text(
-              'Void Factor reads Steps, Water, and Workout minutes in '
-              'read-only mode. It never writes to your health data.',
+              'Void Factor reads Steps, Water, Workout minutes, and Energy '
+              'Burned in read-only mode. It never writes to your health data.',
               style: MonolithTheme.labelMedium.copyWith(
                 color: MonolithTheme.outline,
               ),
@@ -122,6 +136,44 @@ class _HealthConnectScreenState extends ConsumerState<HealthConnectScreen> {
           )),
           const SizedBox(height: 4),
           Text(label, style: MonolithTheme.headlineLarge.copyWith(color: color)),
+        ],
+      ),
+    );
+  }
+
+  /// Shown when the user connected before Energy Burned was requested.
+  ///
+  /// Inverted rather than a snackbar: the projection is quietly wrong until this
+  /// is acted on, and a message that disappears on its own would not carry that.
+  Widget _reauthorizeBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: MonolithTheme.invertedCardDecoration,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ENERGY BURNED NOT GRANTED',
+            style: MonolithTheme.labelMedium
+                .copyWith(color: MonolithTheme.surface),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'You connected before Void Factor started reading Energy Burned. '
+            'Until you grant it, projections estimate your burn from steps and '
+            'workouts alone.',
+            style: MonolithTheme.bodyMedium.copyWith(
+              color: MonolithTheme.surfaceContainerHigh,
+            ),
+          ),
+          const SizedBox(height: 16),
+          MonolithButton(
+            label: 'Grant Energy Access',
+            icon: Icons.local_fire_department_outlined,
+            style: MonolithButtonStyle.secondary,
+            onPressed: _busy ? null : _connect,
+          ),
         ],
       ),
     );

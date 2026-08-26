@@ -47,6 +47,10 @@ void main() {
         torndownUids.add(uid);
         if (logDeleteThrows != null) throw logDeleteThrows;
       },
+      deleteWeightLogFile: (uid) async {
+        calls.add('deleteWeightLogFile:$uid');
+        torndownUids.add(uid);
+      },
       clearSession: () async {
         calls.add('clearSession');
         if (clearSessionThrows != null) throw clearSessionThrows;
@@ -81,6 +85,7 @@ void main() {
       final authDelete = calls.indexOf('authDelete');
       for (final step in [
         'deleteLogFile:uid-1',
+        'deleteWeightLogFile:uid-1',
         'clearSession',
         'clearSignInHints',
         'cancelBackgroundWork',
@@ -101,9 +106,10 @@ void main() {
     test('is the one captured before the delete', () async {
       await service().deleteAccount();
 
-      // Read from the SDK afterwards this would be null, and the log file — named
-      // for the uid — would survive the account that owned it.
-      expect(torndownUids, ['uid-1']);
+      // Read from the SDK afterwards this would be null, and the log files —
+      // both named for the uid — would survive the account that owned them.
+      expect(torndownUids, isNotEmpty);
+      expect(torndownUids, everyElement('uid-1'));
     });
 
     test('refuses when nobody is signed in', () async {
@@ -214,6 +220,7 @@ void main() {
         calls,
         containsAll([
           'deleteLogFile:uid-1',
+          'deleteWeightLogFile:uid-1',
           'clearSession',
           'clearSignInHints',
           'cancelBackgroundWork',
@@ -237,6 +244,14 @@ void main() {
         calls,
         containsAll(['clearSession', 'clearSignInHints', 'cancelBackgroundWork']),
       );
+    });
+
+    test('an undeletable food log still leaves the weight log erased', () async {
+      await service(logDeleteThrows: Exception('read-only')).deleteAccount();
+
+      // The two logs are separate seams precisely so that one unreadable file
+      // cannot leave the other user's data behind.
+      expect(calls, contains('deleteWeightLogFile:uid-1'));
     });
 
     test('a failing session clear does not skip the others either', () async {
