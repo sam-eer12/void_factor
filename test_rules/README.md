@@ -7,15 +7,17 @@ these fail loudly if the file is ever loosened.
 ## Running
 
 The Firestore emulator needs **JDK 21 or newer** (firebase-tools dropped
-anything older). With one installed:
+anything older). There is no `java` on this machine's PATH, but Android Studio
+ships a JetBrains Runtime that qualifies:
 
 ```sh
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+export PATH="$JAVA_HOME/bin:$PATH"
 npm install
 npm test
 ```
 
-Without one — and without installing a JDK on your machine — run it in a
-container:
+With no Android Studio and no JDK, run it in a container instead:
 
 ```sh
 podman run --rm -v "$PWD/..:/work:Z" -w /work/test_rules node:22-trixie sh -c '

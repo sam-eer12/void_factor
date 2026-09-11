@@ -103,6 +103,15 @@ flutter analyze --fatal-infos && flutter test
 cd microservice && pytest
 ```
 
+Android builds and the Firestore emulator both need a JDK, and there is none on
+PATH here. Android Studio's bundled runtime works for both:
+
+```sh
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+export PATH="$JAVA_HOME/bin:$PATH"
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+```
+
 ---
 
 ## How the pieces fit
