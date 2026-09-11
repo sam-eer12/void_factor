@@ -4,6 +4,9 @@ services:
     env_file:
       - path: ./microservice/.env
         required: false
+    environment:
+      # Without this the /api/ routes fail closed, so local scanning would 503.
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-signinpractice-bfade}
     expose:
       - "8000"
     networks:
@@ -22,6 +25,7 @@ services:
       - "8080:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/api_locations.conf:/etc/nginx/api_locations.conf:ro
     depends_on:
       microservice:
         condition: service_healthy

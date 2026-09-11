@@ -7,6 +7,11 @@ DEV_GEMINI_KEY = os.getenv("x_gemini_key")
 DEV_OPENROUTER_KEY = os.getenv("x_openrouter_key")
 DEV_NVIDIA_KEY = os.getenv("NVIDIA_API_KEY")
 
+# The Firebase project whose ID tokens this service accepts. Not a secret —
+# it already ships inside the Flutter binary. Unset means the /api/ routes
+# fail closed with a 503; see app/auth.py.
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
+
 GEMINI_MODEL = "gemini-3.1-flash-lite-preview"
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
 NVIDIA_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"

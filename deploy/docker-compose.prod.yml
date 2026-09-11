@@ -1,0 +1,78 @@
+# Production stack for the OCI instance. Run from this directory:
+#   docker-compose -f docker-compose.prod.yml up -d
+#
+# Differs from the development compose in three ways: TLS on 80/443 instead of
+# plain 8080, a certbot sidecar holding the certificate current, and named
+# volumes so certificates survive a recreate.
+
+services:
+  microservice:
+    build: ../microservice
+    env_file:
+      - path: ../microservice/.env
+        required: false
+    environment:
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?FIREBASE_PROJECT_ID must be set}
+    expose:
+      - "8000"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_HOSTNAME: ${APP_HOSTNAME:?APP_HOSTNAME must be set}
+      # Substitute only APP_HOSTNAME, leaving nginx's own $variables alone.
+      NGINX_ENVSUBST_FILTER: "APP_HOSTNAME"
+    volumes:
+      - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./templates:/etc/nginx/templates:ro
+      - ../nginx/api_locations.conf:/etc/nginx/api_locations.conf:ro
+      - certbot-conf:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    # The image's entrypoint still runs (that is what does the envsubst); this
+    # only replaces the command it execs, adding a reload every 6h so a renewed
+    # certificate is picked up without anyone logging in.
+    command: >
+      sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done &
+      nginx -g 'daemon off;'"
+    depends_on:
+      microservice:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: unless-stopped
+
+  # Wakes twice a day, renews anything inside 30 days of expiry, and exits
+  # quietly otherwise. nginx separately reloads daily to pick up a new cert —
+  # a reload is cheap and cheaper than teaching this container to signal it.
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot-conf:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    entrypoint: >
+      sh -c 'trap exit TERM;
+      while :; do certbot renew --webroot -w /var/www/certbot --quiet;
+      sleep 12h & wait $${!}; done'
+    networks:
+      - internal
+    restart: unless-stopped
+
+volumes:
+  certbot-conf:
+  certbot-www:
+
+networks:
+  internal:
+    driver: bridge

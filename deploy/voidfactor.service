@@ -1,0 +1,26 @@
+# Brings the stack up on boot. Install with:
+#   sudo cp deploy/voidfactor.service /etc/systemd/system/
+#   sudo systemctl enable --now voidfactor
+#
+# Type=oneshot with RemainAfterExit is right here because compose detaches: the
+# unit's job is to run `up -d` and be considered active until someone stops it.
+# The containers' own `restart: unless-stopped` handles crashes.
+
+[Unit]
+Description=Void Factor food analysis API (nginx + FastAPI + certbot)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/void_factor/deploy
+EnvironmentFile=/opt/void_factor/deploy/.env
+ExecStart=/usr/local/bin/docker-compose -f docker-compose.prod.yml up -d
+ExecStop=/usr/local/bin/docker-compose -f docker-compose.prod.yml down
+ExecReload=/usr/local/bin/docker-compose -f docker-compose.prod.yml up -d --build
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

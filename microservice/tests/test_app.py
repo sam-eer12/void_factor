@@ -1,12 +1,27 @@
 from fastapi.testclient import TestClient
 import json
+import pytest
 import respx
 from httpx import Response
 
+from app.auth import verify_caller
 from app.main import app
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _authenticated():
+    """These tests are about providers, not about who may call them.
+
+    Auth is replaced wholesale rather than by minting a token per request, so a
+    change to the token format can never quietly turn a provider test green.
+    test_auth.py covers the real verifier.
+    """
+    app.dependency_overrides[verify_caller] = lambda: "u1"
+    yield
+    app.dependency_overrides.clear()
 
 FOOD_JSON = (
     '{"name":"Banana","nutrients":'
@@ -23,15 +38,15 @@ def _fake_gemini(monkeypatch, text):
     fr = FakeResponse()
     fr.text = text
 
-    class FakeModel:
-        def __init__(self, *a, **k):
-            pass
-
+    class FakeModels:
         def generate_content(self, *a, **k):
             return fr
 
-    monkeypatch.setattr("app.providers.gemini.genai.configure", lambda *a, **k: None)
-    monkeypatch.setattr("app.providers.gemini.genai.GenerativeModel", FakeModel)
+    class FakeClient:
+        def __init__(self, *a, **k):
+            self.models = FakeModels()
+
+    monkeypatch.setattr("app.providers.gemini.genai.Client", FakeClient)
 
 
 def _chat_completion(content):
