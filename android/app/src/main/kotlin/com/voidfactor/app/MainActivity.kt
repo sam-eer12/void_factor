@@ -1,4 +1,4 @@
-package com.example.void_factor
+package com.voidfactor.app
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 
