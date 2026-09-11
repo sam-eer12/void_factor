@@ -91,7 +91,7 @@ void main() {
         const ApiCredentials(provider: 'GEMINI', key: 'k'),
       ),
       baseUrl: 'http://test.local:8080',
-      currentUserId: () => 'uid-1',
+      caller: () async => (uid: 'uid-1', idToken: 't'),
     );
   }
 
@@ -295,7 +295,7 @@ void main() {
             const ApiCredentials(provider: 'GEMINI', key: 'k'),
           ),
           baseUrl: 'http://test.local:8080',
-          currentUserId: () => 'uid-1',
+          caller: () async => (uid: 'uid-1', idToken: 't'),
         ),
       );
 

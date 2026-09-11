@@ -45,13 +45,17 @@ def signing_key_for(token: str):
 def verify_id_token(token: str) -> str:
     """Returns the verified uid, or raises 401.
 
-    Every rejection is one status with no detail about which check failed:
-    telling a caller that the signature was fine but the audience was wrong
-    helps nobody who is allowed to be here.
+    Every rejection is the same status and the same detail, because telling a
+    caller that the signature was fine but the audience was wrong helps nobody
+    who is allowed to be here.
+
+    The `auth:` prefix on every detail is load-bearing: the provider routes also
+    answer 401 when a *provider* key is missing, and the client must not tell
+    someone to fix their API key when what actually expired was their session.
     """
     project_id = config.FIREBASE_PROJECT_ID
     if not project_id:
-        raise HTTPException(status_code=503, detail="auth not configured")
+        raise HTTPException(status_code=503, detail="auth: not configured")
 
     try:
         claims = jwt.decode(
@@ -62,14 +66,14 @@ def verify_id_token(token: str) -> str:
             issuer=f"https://securetoken.google.com/{project_id}",
         )
     except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="invalid token")
+        raise HTTPException(status_code=401, detail="auth: invalid token")
     # A malformed token can fail inside the key lookup rather than the decode.
     except ValueError:
-        raise HTTPException(status_code=401, detail="invalid token")
+        raise HTTPException(status_code=401, detail="auth: invalid token")
 
     uid = claims.get("sub")
     if not isinstance(uid, str) or not uid.strip():
-        raise HTTPException(status_code=401, detail="invalid token")
+        raise HTTPException(status_code=401, detail="auth: invalid token")
     return uid
 
 
@@ -86,16 +90,16 @@ async def verify_caller(
     if not config.FIREBASE_PROJECT_ID:
         # Checked before the headers so a misconfigured deploy reports itself as
         # misconfigured (503) rather than as rejecting everyone (401).
-        raise HTTPException(status_code=503, detail="auth not configured")
+        raise HTTPException(status_code=503, detail="auth: not configured")
 
     if not authorization:
-        raise HTTPException(status_code=401, detail="missing bearer token")
+        raise HTTPException(status_code=401, detail="auth: missing bearer token")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
-        raise HTTPException(status_code=401, detail="missing bearer token")
+        raise HTTPException(status_code=401, detail="auth: missing bearer token")
 
     uid = verify_id_token(token.strip())
 
     if not x_user_id or x_user_id != uid:
-        raise HTTPException(status_code=401, detail="user id mismatch")
+        raise HTTPException(status_code=401, detail="auth: user id mismatch")
     return uid
