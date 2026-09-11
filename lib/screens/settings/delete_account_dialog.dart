@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/auth/account_deletion.dart';
+import '../../features/auth/auth_provider.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_text_field.dart';
 
@@ -40,6 +43,36 @@ class DeleteAccountDialog extends StatefulWidget {
       builder: (_) => const DeleteAccountDialog(),
     );
     return confirmed ?? false;
+  }
+
+  /// Confirms, deletes, and reports whatever came back.
+  ///
+  /// Lives here rather than on a screen because two screens now offer the same
+  /// irreversible action, and two copies of "confirm, delete, report" is two
+  /// places for the reporting rules below to drift apart.
+  ///
+  /// A `deleted` outcome needs nothing said: `performAccountDeletion` has
+  /// already replaced the screen with the login screen, and a SnackBar would be
+  /// congratulating the user on a screen they never asked to see.
+  static Future<void> showAndPerform(BuildContext context, WidgetRef ref) async {
+    if (!await show(context) || !context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await performAccountDeletion(context, ref);
+
+    final message = switch (result.outcome) {
+      DeletionOutcome.deleted => null,
+      // Backing out of the Google prompt is a decision, like a cancelled
+      // picker: nothing was touched and nothing needs saying.
+      DeletionOutcome.reauthCancelled => null,
+      DeletionOutcome.needsRelogin => AccountDeletionService.needsReloginMessage,
+      DeletionOutcome.failed => result.message,
+    };
+    if (message == null) return;
+
+    // The captured messenger, not a fresh lookup: the calling screen may
+    // already be gone, and a SnackBar shown through a dead context is dropped.
+    messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
