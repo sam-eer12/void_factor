@@ -60,6 +60,8 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
       key: _scaffoldKey,
       backgroundColor: MonolithTheme.background,
       drawer: MonolithDrawer(
+        userName: (ref.watch(authStateProvider).value?.displayName ?? 'USER')
+            .toUpperCase(),
         onProfileTap: () {
           Navigator.pop(context);
           MonolithShell.setActiveTab(context, 3, '/settings');
@@ -67,6 +69,10 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
         onDashboardTap: () {
           Navigator.pop(context);
           MonolithShell.setActiveTab(context, 0, '/dashboard');
+        },
+        onAiModelsTap: () {
+          Navigator.pop(context);
+          MonolithShell.setActiveTab(context, 1, '/ai-vision');
         },
         onHistoryTap: () {
           Navigator.pop(context);

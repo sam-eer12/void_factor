@@ -10,6 +10,7 @@ import '../../models/food_entry.dart';
 import '../auth/auth_provider.dart';
 import 'api_credentials.dart';
 import 'food_analysis_client.dart';
+import 'food_log_grouping.dart';
 import 'food_log_store.dart';
 
 final foodAnalysisClientProvider = Provider<FoodAnalysisClient>((ref) {
@@ -164,12 +165,79 @@ class RecentFoodLog extends AsyncNotifier<List<FoodEntry>> {
     final current = state.value ?? await store.readAll();
     final next = [entry, ...current];
 
+    await _persist(store, next);
+  }
+
+  /// Replaces the entry sharing [entry]'s id, keeping its position in the log.
+  ///
+  /// Named `replace` rather than `update` because `AsyncNotifier` already
+  /// declares an `update`, and overriding it with a different contract would be
+  /// a trap for anyone who called the inherited one expecting its behaviour.
+  ///
+  /// Position is kept rather than recomputed because an edit that moved a meal
+  /// to the top of the list would look like a second meal was logged. The id and
+  /// `loggedAt` are the entry's identity here; only what it describes changes.
+  ///
+  /// Silently does nothing when the id is absent, which is what a stale screen
+  /// editing an entry deleted elsewhere produces. Writing it back would
+  /// resurrect a row the user deleted.
+  Future<void> replace(FoodEntry entry) async {
+    final store = await ref.read(foodLogStoreProvider.future);
+    final current = state.value ?? await store.readAll();
+
+    final index = current.indexWhere((e) => e.id == entry.id);
+    if (index == -1) return;
+
+    final next = [...current]..[index] = entry;
+    await _persist(store, next);
+  }
+
+  /// Removes the entry with [id] and reports where it was.
+  ///
+  /// The index is returned so an undo can put it back where it came from rather
+  /// than at the top of the log. Returns -1 when the id is absent, which is a
+  /// no-op: deleting something already deleted is the outcome the user wanted
+  /// either way.
+  Future<int> remove(String id) async {
+    final store = await ref.read(foodLogStoreProvider.future);
+    final current = state.value ?? await store.readAll();
+
+    final index = current.indexWhere((e) => e.id == id);
+    if (index == -1) return -1;
+
+    final next = [...current]..removeAt(index);
+    await _persist(store, next);
+    return index;
+  }
+
+  /// Puts [entry] back at [index]. The undo half of [remove].
+  ///
+  /// Position matters: [add] prepends, so undoing through it would move an old
+  /// meal to the top of the log and make a restored entry look like a new one.
+  ///
+  /// The index is clamped rather than trusted. Between the delete and the undo
+  /// the user may have logged or removed something else, and a stale index
+  /// would otherwise throw on a list that is now shorter.
+  Future<void> insertAt(FoodEntry entry, int index) async {
+    final store = await ref.read(foodLogStoreProvider.future);
+    final current = state.value ?? await store.readAll();
+    if (current.any((e) => e.id == entry.id)) return;
+
+    final next = [...current]
+      ..insert(index.clamp(0, current.length), entry);
+    await _persist(store, next);
+  }
+
+  /// Writes [next] to disk, then commits it to state.
+  ///
+  /// Same ordering and same reasoning as [add]: the file is the only copy, so a
+  /// change that failed to write must not be shown as though it succeeded.
+  Future<void> _persist(FoodLogStore store, List<FoodEntry> next) async {
     try {
       await store.writeAll(next);
     } catch (_) {
       throw const FoodAnalysisException(errorSaveFailed);
     }
-
     state = AsyncData(next);
   }
 }
@@ -177,4 +245,22 @@ class RecentFoodLog extends AsyncNotifier<List<FoodEntry>> {
 final recentFoodLogProvider =
     AsyncNotifierProvider<RecentFoodLog, List<FoodEntry>>(() {
   return RecentFoodLog();
+});
+
+/// The clock the dashboard's "today" is measured against.
+///
+/// A provider rather than `DateTime.now()` so a test can stand at either side of
+/// midnight, which is the only place the calendar-day boundary can be wrong.
+final foodLogClockProvider = Provider<DateTime Function()>((ref) {
+  return DateTime.now;
+});
+
+/// Today's intake, scaled by each entry's serving multiplier.
+///
+/// Derived from [recentFoodLogProvider] rather than read from the store, so a
+/// meal saved in the form updates the dashboard without either screen knowing
+/// about the other.
+final todayTotalsProvider = FutureProvider<DayTotals>((ref) async {
+  final entries = await ref.watch(recentFoodLogProvider.future);
+  return totalsForDay(entries, day: ref.read(foodLogClockProvider)());
 });

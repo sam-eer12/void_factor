@@ -109,3 +109,60 @@ String foodLogAmountLabel(double value) => value == value.roundToDouble()
     ? value.toStringAsFixed(0)
     : value.toStringAsFixed(1);
 
+
+/// One day's intake, already scaled by each entry's serving multiplier.
+class DayTotals {
+  final double calories;
+  final double proteinG;
+  final double carbsG;
+  final double fatsG;
+
+  /// How many entries produced these figures. The dashboard uses it to tell
+  /// "you logged nothing" apart from "you logged a zero-calorie drink", which
+  /// look identical from the numbers alone.
+  final int entryCount;
+
+  const DayTotals({
+    this.calories = 0,
+    this.proteinG = 0,
+    this.carbsG = 0,
+    this.fatsG = 0,
+    this.entryCount = 0,
+  });
+
+  bool get isEmpty => entryCount == 0;
+}
+
+/// Sums every entry logged on the calendar day containing [day].
+///
+/// A calendar day, not a rolling 24 hours, matching `groupByDay`: a dashboard
+/// whose "today" quietly discarded this morning's breakfast at lunchtime would
+/// be worse than useless.
+DayTotals totalsForDay(List<FoodEntry> entries, {required DateTime day}) {
+  final start = DateTime(day.year, day.month, day.day);
+  final end = DateTime(day.year, day.month, day.day + 1);
+
+  var calories = 0.0;
+  var protein = 0.0;
+  var carbs = 0.0;
+  var fats = 0.0;
+  var count = 0;
+
+  for (final entry in entries) {
+    final at = entry.loggedAt;
+    if (at.isBefore(start) || !at.isBefore(end)) continue;
+    calories += entry.totalCalories;
+    protein += entry.totalProteinG;
+    carbs += entry.totalCarbsG;
+    fats += entry.totalFatsG;
+    count++;
+  }
+
+  return DayTotals(
+    calories: calories,
+    proteinG: protein,
+    carbsG: carbs,
+    fatsG: fats,
+    entryCount: count,
+  );
+}

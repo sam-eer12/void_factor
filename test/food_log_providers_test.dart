@@ -46,13 +46,32 @@ class FakeImageCaptureGateway implements ImageCaptureGateway {
   }
 }
 
+/// A store whose writes can be made to fail.
+///
+/// Subclassed rather than faked wholesale so the passing paths exercise the real
+/// file, which is what makes "persisted before committing" a claim about disk
+/// rather than about a list in memory.
+class FailingFoodLogStore extends FoodLogStore {
+  FailingFoodLogStore({required super.dir, required super.uid});
+
+  bool failWrites = false;
+
+  @override
+  Future<void> writeAll(List<FoodEntry> entries) async {
+    if (failWrites) {
+      throw const FileSystemException('no space left on device');
+    }
+    return super.writeAll(entries);
+  }
+}
+
 void main() {
   late Directory dir;
-  late FoodLogStore store;
+  late FailingFoodLogStore store;
 
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('food_log_providers_test');
-    store = FoodLogStore(dir: dir, uid: 'uid-1');
+    store = FailingFoodLogStore(dir: dir, uid: 'uid-1');
   });
 
   tearDown(() async {
@@ -370,6 +389,144 @@ void main() {
       final container = containerWith();
 
       expect(await container.read(visionAnalysisProvider.future), isNull);
+    });
+  });
+
+  group('replace', () {
+    test('swaps the entry in place, keeping its position', () async {
+      // An edit that moved a meal to the top of the list would read as a second
+      // meal having been logged.
+      await store.writeAll([entry('Newest'), entry('Target'), entry('Oldest')]);
+      final container = containerWith();
+      final log = container.read(recentFoodLogProvider.notifier);
+      final before = await container.read(recentFoodLogProvider.future);
+
+      await log.replace(before[1].copyWith(name: 'Corrected'));
+
+      final after = await container.read(recentFoodLogProvider.future);
+      expect(after.map((e) => e.name), ['Newest', 'Corrected', 'Oldest']);
+    });
+
+    test('reaches disk, not just memory', () async {
+      await store.writeAll([entry('Before')]);
+      final container = containerWith();
+      final existing = (await container.read(recentFoodLogProvider.future)).single;
+
+      await container
+          .read(recentFoodLogProvider.notifier)
+          .replace(existing.copyWith(name: 'After'));
+
+      expect((await store.readAll()).single.name, 'After');
+    });
+
+    test('ignores an entry that is no longer in the log', () async {
+      // A stale screen editing something deleted elsewhere. Writing it back
+      // would resurrect a row the user deleted.
+      await store.writeAll([entry('Kept')]);
+      final container = containerWith();
+
+      await container
+          .read(recentFoodLogProvider.notifier)
+          .replace(entry('Ghost'));
+
+      expect((await container.read(recentFoodLogProvider.future)).length, 1);
+    });
+
+    test('a failed write leaves the old entry standing', () async {
+      await store.writeAll([entry('Original')]);
+      final container = containerWith();
+      final existing = (await container.read(recentFoodLogProvider.future)).single;
+      store.failWrites = true;
+
+      await expectLater(
+        container
+            .read(recentFoodLogProvider.notifier)
+            .replace(existing.copyWith(name: 'Never saved')),
+        throwsA(isA<FoodAnalysisException>()),
+      );
+
+      store.failWrites = false;
+      expect((await store.readAll()).single.name, 'Original');
+    });
+  });
+
+  group('remove', () {
+    test('drops the entry and reports where it was', () async {
+      await store.writeAll([entry('A'), entry('B'), entry('C')]);
+      final container = containerWith();
+      final entries = await container.read(recentFoodLogProvider.future);
+
+      final index = await container
+          .read(recentFoodLogProvider.notifier)
+          .remove(entries[1].id);
+
+      expect(index, 1);
+      expect(
+        (await container.read(recentFoodLogProvider.future)).map((e) => e.name),
+        ['A', 'C'],
+      );
+    });
+
+    test('reports -1 for an id that is already gone', () async {
+      final container = containerWith();
+      expect(
+        await container.read(recentFoodLogProvider.notifier).remove('nope'),
+        -1,
+      );
+    });
+
+    test('reaches disk', () async {
+      await store.writeAll([entry('Doomed')]);
+      final container = containerWith();
+      final logged = (await container.read(recentFoodLogProvider.future)).single;
+
+      await container.read(recentFoodLogProvider.notifier).remove(logged.id);
+
+      expect(await store.readAll(), isEmpty);
+    });
+  });
+
+  group('insertAt', () {
+    test('puts an undone delete back where it came from', () async {
+      await store.writeAll([entry('A'), entry('B'), entry('C')]);
+      final container = containerWith();
+      final log = container.read(recentFoodLogProvider.notifier);
+      final removed = (await container.read(recentFoodLogProvider.future))[1];
+
+      final index = await log.remove(removed.id);
+      await log.insertAt(removed, index);
+
+      expect(
+        (await container.read(recentFoodLogProvider.future)).map((e) => e.name),
+        ['A', 'B', 'C'],
+      );
+    });
+
+    test('refuses to create a duplicate', () async {
+      // Two taps on one UNDO, or an undo after the entry came back some other
+      // way.
+      await store.writeAll([entry('A')]);
+      final container = containerWith();
+      final logged = (await container.read(recentFoodLogProvider.future)).single;
+
+      await container.read(recentFoodLogProvider.notifier).insertAt(logged, 0);
+
+      expect((await container.read(recentFoodLogProvider.future)).length, 1);
+    });
+
+    test('clamps a stale index rather than throwing', () async {
+      // Between the delete and the undo the user may have removed other rows,
+      // leaving the recorded index past the end of a now-shorter list.
+      final container = containerWith();
+
+      await container
+          .read(recentFoodLogProvider.notifier)
+          .insertAt(entry('Restored'), 99);
+
+      expect(
+        (await container.read(recentFoodLogProvider.future)).single.name,
+        'Restored',
+      );
     });
   });
 }

@@ -29,12 +29,31 @@ class FoodEntryFormScreen extends ConsumerStatefulWidget {
 
   final FoodSource source;
 
+  /// Set when correcting an entry that already exists.
+  ///
+  /// Its presence is what distinguishes the two modes, so there is no separate
+  /// `isEditing` flag that could disagree with it. The saved entry keeps this
+  /// entry's id and `loggedAt`: an edit changes what a meal *was*, not when it
+  /// happened, and a new id would leave the original behind as a duplicate.
+  final FoodEntry? editing;
+
   const FoodEntryFormScreen({
     super.key,
     this.initialName = '',
     this.initialNutrients = const Nutrients(),
     required this.source,
+    this.editing,
   });
+
+  /// Opens the form on an existing entry, pre-filled with everything it holds.
+  FoodEntryFormScreen.edit(FoodEntry entry, {Key? key})
+      : this(
+          key: key,
+          initialName: entry.name,
+          initialNutrients: entry.nutrients,
+          source: entry.source,
+          editing: entry,
+        );
 
   @override
   ConsumerState<FoodEntryFormScreen> createState() =>
@@ -43,6 +62,8 @@ class FoodEntryFormScreen extends ConsumerStatefulWidget {
 
 class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
   static const String saveLabel = 'SAVE ENTRY';
+  static const String saveEditLabel = 'SAVE CHANGES';
+  static const String editTitle = 'EDIT ENTRY';
 
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -51,7 +72,7 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
   final _carbsController = TextEditingController();
   final _fatsController = TextEditingController();
 
-  double _quantity = 1.0;
+  late double _quantity = widget.editing?.quantity ?? 1.0;
   bool _isSaving = false;
 
   @override
@@ -109,19 +130,33 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
   /// The entry as it stands. Used for the live preview and for the save, so what
   /// the user reads above the button is arithmetically the thing that gets
   /// written — not a second calculation that could drift from it.
-  FoodEntry _draft() => FoodEntry.create(
-        name: _nameController.text,
+  FoodEntry _draft() {
+    final edited = widget.editing;
+    if (edited != null) {
+      // copyWith, not create: a new id would orphan the original as a duplicate,
+      // and a new timestamp would move the meal to a day it was not eaten on.
+      return edited.copyWith(
+        name: _nameController.text.trim(),
         nutrients: _perServing,
         quantity: _quantity,
-        source: widget.source,
       );
+    }
+    return FoodEntry.create(
+      name: _nameController.text,
+      nutrients: _perServing,
+      quantity: _quantity,
+      source: widget.source,
+    );
+  }
 
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     setState(() => _isSaving = true);
     try {
-      await ref.read(recentFoodLogProvider.notifier).add(_draft());
+      final log = ref.read(recentFoodLogProvider.notifier);
+      final draft = _draft();
+      await (widget.editing == null ? log.add(draft) : log.replace(draft));
       if (!mounted) return;
       Navigator.pop(context);
     } catch (error) {
@@ -211,7 +246,7 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
                       _totalCard(draft),
                       const SizedBox(height: 24),
                       MonolithButton(
-                        label: saveLabel,
+                        label: widget.editing == null ? saveLabel : saveEditLabel,
                         isExpanded: true,
                         onPressed: _isSaving ? null : _save,
                       ),
@@ -256,8 +291,13 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
           const SizedBox(width: 16),
           Text(
             // Vision users are checking work the model did; manual users are
-            // doing the work. The title says which.
-            widget.source == FoodSource.vision ? 'CONFIRM ENTRY' : 'ADD ENTRY',
+            // doing the work; an editor is correcting something already logged.
+            // The title says which.
+            widget.editing != null
+                ? editTitle
+                : widget.source == FoodSource.vision
+                    ? 'CONFIRM ENTRY'
+                    : 'ADD ENTRY',
             style: MonolithTheme.headlineLarge,
           ),
         ],

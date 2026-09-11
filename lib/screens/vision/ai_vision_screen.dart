@@ -10,6 +10,7 @@ import '../../theme/monolith_theme.dart';
 import '../../widgets/food_log_row.dart';
 import '../dashboard/monolith_shell.dart';
 import '../food_log/food_entry_form_screen.dart';
+import '../food_log/food_log_actions.dart';
 
 /// Photograph a meal, have it read, confirm what was logged.
 ///
@@ -51,7 +52,7 @@ class AiVisionScreen extends ConsumerWidget {
                     const SizedBox(height: 32),
                     _recentLogsHeader(),
                     const SizedBox(height: 16),
-                    _recentLogs(ref),
+                    _recentLogs(context, ref),
                     const SizedBox(height: 20),
                   ],
                 ),
@@ -275,7 +276,7 @@ class AiVisionScreen extends ConsumerWidget {
         ],
       );
 
-  Widget _recentLogs(WidgetRef ref) {
+  Widget _recentLogs(BuildContext context, WidgetRef ref) {
     return ref.watch(recentFoodLogProvider).when(
           loading: () => const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
@@ -294,7 +295,7 @@ class AiVisionScreen extends ConsumerWidget {
               children: [
                 for (final (index, row) in rows.indexed) ...[
                   if (index > 0) const SizedBox(height: 8),
-                  _logRow(row.$1, row.$2),
+                  _logRow(context, ref, row.$1, row.$2),
                 ],
               ],
             );
@@ -327,9 +328,17 @@ class AiVisionScreen extends ConsumerWidget {
         ),
       );
 
-  Widget _logRow(String dayLabel, FoodEntry entry) => FoodLogRow(
+  Widget _logRow(
+    BuildContext context,
+    WidgetRef ref,
+    String dayLabel,
+    FoodEntry entry,
+  ) =>
+      FoodLogRow(
         entry: entry,
         // This list has no day headers, so the row carries the day itself.
         subtitle: '$dayLabel · ${foodLogTimeLabel(entry.loggedAt)}',
+        onEdit: () => editFoodEntry(context, entry),
+        onDelete: () => deleteFoodEntry(context, ref, entry),
       );
 }
