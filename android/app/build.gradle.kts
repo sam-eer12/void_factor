@@ -23,6 +23,10 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // Required by flutter_local_notifications, which uses java.time to
+        // schedule the daily reminder. Without it the release build fails at
+        // :app:checkReleaseAarMetadata.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -52,6 +56,15 @@ android {
 
     buildTypes {
         release {
+            // R8 runs regardless of isMinifyEnabled — the Flutter Gradle plugin
+            // turns it on for release. Naming the rules file explicitly is what
+            // makes that survivable; without it the build fails in R8 on
+            // MediaPipe classes that flutter_gemma does not ship.
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+
             // The real key when key.properties is present, debug otherwise.
             // Falling back rather than failing keeps `flutter build apk
             // --release` working for anyone who just cloned the repo; the
@@ -67,4 +80,10 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Backports the java.time API to the minSdk, which is what
+    // isCoreLibraryDesugaringEnabled above needs to do its job.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
