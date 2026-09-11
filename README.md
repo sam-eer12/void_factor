@@ -153,6 +153,45 @@ Optional: set `SUPPORT_UPI_VPA` and `SUPPORT_BMC_USERNAME` at build time to
 activate the support screen. Until then it says support is not set up, which is
 the truth.
 
+### The size problem
+
+**The arm64 build is 216.6 MB, over Google Play's 200 MB download limit.** Every
+modern phone is arm64, so this blocks a Play release as things stand.
+
+| ABI | Download size |
+| --- | --- |
+| `arm64-v8a` | **216.6 MB** |
+| `x86_64` | 58.5 MB |
+| `armeabi-v7a` | 43.8 MB |
+
+It is all `flutter_gemma`'s native inference stack, and none of it is the model
+— those weights are already downloaded at runtime, not bundled. arm64 is four
+times the others because the Qualcomm NPU backends are arm64-only:
+
+```
+libllm_inference_engine_jni.so   26.4 MB
+libLiteRtLm.so                   24.7 MB
+libqdrant_edge_ffi.so            19.3 MB   (vector DB — unused here)
+libmediapipe_tasks_vision_jni.so 14.3 MB
+…_image_generator_jni.so         14.0 MB   (image generation — unused here)
+libQnnHtpV*Skel.so               ~11 MB each, several
+```
+
+Three ways out, in increasing order of effort:
+
+1. **Ship without on-device Gemma.** `TemplateNarrator` already exists and is
+   already the fallback when the model is absent, so the app degrades to
+   built-in wording with no code change — only a dependency removal. Roughly
+   180 MB back.
+2. **Play Feature Delivery** — move the inference engine into an on-demand
+   module, downloaded when the user opts into the on-device model. Keeps the
+   feature, but it is real Gradle work.
+3. **Wait for `flutter_gemma` to split its backends.** Nothing to do but track
+   it.
+
+This is not a regression from any recent change — it is what the dependency has
+always cost. It only became visible when a release build first completed.
+
 ---
 
 ## Known limits
@@ -167,6 +206,7 @@ the truth.
   NVIDIA report their upstream status.
 - **The log file grows without bound.** Roughly 700 KB per year at ten meals a
   day, read whole at launch. Fine for years, not forever.
+- **The app is very large on arm64** — see "The size problem" above.
 
 ---
 
