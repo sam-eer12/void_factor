@@ -61,6 +61,10 @@ dependencies:
   workmanager: ^0.9.0+3
   share_plus: ^12.0.2
   file_selector: ^1.1.0
+  flutter_local_notifications: ^22.3.0
+  timezone: ^0.11.1
+  qr_flutter: ^4.1.0
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

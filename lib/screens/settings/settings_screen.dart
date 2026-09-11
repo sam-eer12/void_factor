@@ -193,17 +193,16 @@ class SettingsScreen extends ConsumerWidget {
                     _buildSettingsTile(
                       Icons.notifications_none,
                       'NOTIFICATIONS',
-                      'Configure system alerts',
-                      () {},
+                      'A daily nudge to log your meals',
+                      () => Navigator.pushNamed(
+                          context, AppRoutes.notifications),
                     ),
                     const SizedBox(height: 8),
-                    _buildSettingsTile(
-                      Icons.palette_outlined,
-                      'APPEARANCE',
-                      'Visual system configuration',
-                      () {},
-                    ),
-                    const SizedBox(height: 8),
+                    // APPEARANCE was removed rather than built. The monochrome
+                    // look is a deliberate design position, and a row promising
+                    // a theme switcher that will never exist is worse than no
+                    // row at all.
+
                     _buildSettingsTile(
                       Icons.health_and_safety_outlined,
                       'HEALTH CONNECT',

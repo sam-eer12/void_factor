@@ -1,242 +1,70 @@
 import 'package:flutter/material.dart';
-import '../../theme/monolith_theme.dart';
-import '../../widgets/monolith_card.dart';
-import '../../widgets/monolith_bottom_nav.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../features/support/support_links.dart';
+import '../../theme/monolith_theme.dart';
+import '../../widgets/monolith_bottom_nav.dart';
+import '../../widgets/monolith_button.dart';
+import '../../widgets/monolith_card.dart';
+
+/// Supporting the project, with destinations that exist.
+///
+/// Everything on this screen used to be decoration: an `Icons.qr_code_2` glyph
+/// captioned "UPI QR CODE", a `donate@monolith` handle belonging to nobody, and
+/// PAYPAL / STRIPE / CRYPTO rows with no tap handler at all — the builder that
+/// drew them accepted no callback. Anyone who acted on it sent money nowhere.
+///
+/// Now the QR encodes the same `upi://pay` URI the button opens, so the scanned
+/// and tapped paths cannot disagree. When no destination is configured the
+/// screen says so rather than showing a plausible-looking one.
 class DonationScreen extends StatelessWidget {
   const DonationScreen({super.key});
+
+  static const String unconfiguredTitle = 'NOT ACCEPTING SUPPORT YET';
+  static const String unconfiguredBody =
+      'There is no donation destination set up. Nothing here would reach '
+      'anyone, so nothing is shown.';
+  static const String couldNotOpenUpi =
+      'NO UPI APP FOUND — SCAN THE CODE INSTEAD';
+  static const String couldNotOpenLink = "COULDN'T OPEN THAT LINK";
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-       backgroundColor: MonolithTheme.background,
-       extendBody: true,
-       body: SafeArea(
+      backgroundColor: MonolithTheme.background,
+      extendBody: true,
+      body: SafeArea(
         bottom: false,
         child: Column(
           children: [
-            // ── Top Bar ──
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: const BoxDecoration(
-                color: MonolithTheme.surface,
-                border: Border(
-                  bottom: BorderSide(
-                    color: MonolithTheme.primary,
-                    width: MonolithTheme.borderWidth,
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: MonolithTheme.containerDecoration,
-                      child: const Icon(Icons.arrow_back,
-                          color: MonolithTheme.primary, size: 22),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Text('MONOLITH', style: MonolithTheme.headlineLarge),
-                ],
-              ),
-            ),
-
+            _topBar(context),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ── Header ──
-                    Text('DONATION HUB',
-                        style: MonolithTheme.displayLarge),
+                    Text('SUPPORT', style: MonolithTheme.displayLarge),
                     const SizedBox(height: 4),
                     Text(
-                      'Architectural Philanthropy',
-                      style: MonolithTheme.bodyMedium.copyWith(
+                      'KEEP THE BUILD GOING',
+                      style: MonolithTheme.labelMedium.copyWith(
                         color: MonolithTheme.outline,
                       ),
                     ),
                     const SizedBox(height: 24),
-
-                    // ── Domestic (India) ──
-                    MonolithCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                color: MonolithTheme.primary,
-                                child: const Icon(Icons.flag,
-                                    color: MonolithTheme.surface,
-                                    size: 18),
-                              ),
-                              const SizedBox(width: 12),
-                              Text('DOMESTIC (INDIA)',
-                                  style: MonolithTheme.headlineMedium),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'SCAN TO DONATE VIA UPI',
-                            style: MonolithTheme.labelMedium.copyWith(
-                              color: MonolithTheme.outline,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          // QR Placeholder
-                          Center(
-                            child: Container(
-                              width: 200,
-                              height: 200,
-                              decoration: BoxDecoration(
-                                color: MonolithTheme.surface,
-                                border: Border.all(
-                                  color: MonolithTheme.primary,
-                                  width: MonolithTheme.heroBorderWidth,
-                                ),
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.qr_code_2,
-                                      size: 100,
-                                      color: MonolithTheme.primary),
-                                  const SizedBox(height: 8),
-                                  Text('UPI QR CODE',
-                                      style: MonolithTheme.labelSmall),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Center(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
-                              color: MonolithTheme.primary,
-                              child: Text(
-                                'UPI: donate@monolith',
-                                style:
-                                    MonolithTheme.labelMedium.copyWith(
-                                  color: MonolithTheme.surface,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    if (!SupportLinks.isConfigured)
+                      _unconfigured()
+                    else ...[
+                      if (SupportLinks.hasUpi) _upiCard(context),
+                      if (SupportLinks.hasUpi && SupportLinks.hasBuyMeACoffee)
+                        const SizedBox(height: 16),
+                      if (SupportLinks.hasBuyMeACoffee)
+                        _buyMeACoffeeCard(context),
+                    ],
                     const SizedBox(height: 16),
-
-                    // ── International ──
-                    MonolithCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                color: MonolithTheme.primary,
-                                child: const Icon(Icons.public,
-                                    color: MonolithTheme.surface,
-                                    size: 18),
-                              ),
-                              const SizedBox(width: 12),
-                              Text('INTERNATIONAL',
-                                  style: MonolithTheme.headlineMedium),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-
-                          _buildDonationOption('PAYPAL', Icons.payment),
-                          const SizedBox(height: 8),
-                          _buildDonationOption(
-                              'STRIPE', Icons.credit_card),
-                          const SizedBox(height: 8),
-                          _buildDonationOption(
-                              'CRYPTO', Icons.currency_bitcoin),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // ── System Note ──
-                    MonolithCard(
-                      inverted: true,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.info_outline,
-                                  color: MonolithTheme.surface, size: 18),
-                              const SizedBox(width: 8),
-                              Text(
-                                'SYSTEM NOTE',
-                                style:
-                                    MonolithTheme.labelLarge.copyWith(
-                                  color: MonolithTheme.surface,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'INTERNATIONAL TRANSACTIONS ARE PROCESSED THROUGH '
-                            'ENCRYPTED MONOLITHIC CHANNELS. ALL CONTRIBUTIONS '
-                            'ARE FINAL.',
-                            style: MonolithTheme.bodyMedium.copyWith(
-                              color: MonolithTheme.surfaceContainerHigh,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Container(
-                            height: 1,
-                            color:
-                                MonolithTheme.surface.withValues(alpha: 0.2),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'BUILDING THE MONOLITH.',
-                            style: MonolithTheme.labelLarge.copyWith(
-                              color: MonolithTheme.surface,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Status: Secure',
-                                style:
-                                    MonolithTheme.labelSmall.copyWith(
-                                  color:
-                                      MonolithTheme.surfaceContainerHigh,
-                                ),
-                              ),
-                              Text(
-                                'Version: 2.0.4-B',
-                                style:
-                                    MonolithTheme.labelSmall.copyWith(
-                                  color:
-                                      MonolithTheme.surfaceContainerHigh,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
+                    _note(),
                     const SizedBox(height: 20),
                   ],
                 ),
@@ -248,35 +76,220 @@ class DonationScreen extends StatelessWidget {
       bottomNavigationBar: MonolithBottomNav(
         currentIndex: 0,
         onTap: (i) {
-          if (i == 0) {
-            Navigator.pushReplacementNamed(context, '/dashboard');
-          } else if (i == 1) {
-            Navigator.pushReplacementNamed(context, '/ai-vision');
-          } else if (i == 2) {
-            Navigator.pushReplacementNamed(context, '/projections');
-          } else if (i == 3) {
-            Navigator.pushReplacementNamed(context, '/settings');
-          }
+          const routes = [
+            '/dashboard',
+            '/ai-vision',
+            '/projections',
+            '/settings'
+          ];
+          Navigator.pushReplacementNamed(context, routes[i]);
         },
       ),
     );
   }
 
-  Widget _buildDonationOption(String label, IconData icon) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: MonolithTheme.containerDecoration,
-      child: Row(
+  Widget _topBar(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        decoration: const BoxDecoration(
+          color: MonolithTheme.surface,
+          border: Border(
+            bottom: BorderSide(
+              color: MonolithTheme.primary,
+              width: MonolithTheme.borderWidth,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: MonolithTheme.containerDecoration,
+                child: const Icon(Icons.arrow_back,
+                    color: MonolithTheme.primary, size: 22),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Text('MONOLITH', style: MonolithTheme.headlineLarge),
+          ],
+        ),
+      );
+
+  Widget _unconfigured() => MonolithCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.info_outline,
+                    color: MonolithTheme.primary, size: 18),
+                const SizedBox(width: 8),
+                Text(unconfiguredTitle, style: MonolithTheme.labelLarge),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(unconfiguredBody, style: MonolithTheme.bodyMedium),
+          ],
+        ),
+      );
+
+  Widget _upiCard(BuildContext context) {
+    return MonolithCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: MonolithTheme.primary, size: 22),
-          const SizedBox(width: 12),
-          Text(label, style: MonolithTheme.labelLarge),
-          const Spacer(),
-          const Icon(Icons.chevron_right,
-              color: MonolithTheme.primary, size: 24),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                color: MonolithTheme.primary,
+                child: const Icon(Icons.qr_code_2,
+                    color: MonolithTheme.surface, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Text('UPI (INDIA)', style: MonolithTheme.headlineMedium),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(
+                  color: MonolithTheme.primary,
+                  width: MonolithTheme.heroBorderWidth,
+                ),
+              ),
+              // A real code generated from the same URI the button below opens.
+              // White background and black modules regardless of theme: a
+              // scanner needs the contrast, not the brand.
+              child: QrImageView(
+                data: SupportLinks.upiUri.toString(),
+                version: QrVersions.auto,
+                size: 200,
+                backgroundColor: Colors.white,
+                eyeStyle: const QrEyeStyle(
+                  eyeShape: QrEyeShape.square,
+                  color: Colors.black,
+                ),
+                dataModuleStyle: const QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.square,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: SelectableText(
+              SupportLinks.upiVpa,
+              style: MonolithTheme.labelMedium,
+            ),
+          ),
+          const SizedBox(height: 16),
+          MonolithButton(
+            label: 'OPEN UPI APP',
+            onPressed: () => _open(
+              context,
+              SupportLinks.upiUri,
+              // A phone with no UPI app installed is the ordinary case outside
+              // India, and the code above still works for someone else's phone.
+              failureMessage: couldNotOpenUpi,
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Widget _buyMeACoffeeCard(BuildContext context) {
+    return MonolithCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                color: MonolithTheme.primary,
+                child: const Icon(Icons.coffee,
+                    color: MonolithTheme.surface, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Text('BUY ME A COFFEE',
+                  style: MonolithTheme.headlineMedium),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Card and international payments, handled by Buy Me a Coffee.',
+            style: MonolithTheme.bodyMedium,
+          ),
+          const SizedBox(height: 16),
+          MonolithButton(
+            label: 'OPEN IN BROWSER',
+            style: MonolithButtonStyle.secondary,
+            onPressed: () => _open(
+              context,
+              SupportLinks.buyMeACoffeeUri,
+              failureMessage: couldNotOpenLink,
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _note() => MonolithCard(
+        inverted: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.info_outline,
+                    color: MonolithTheme.surface, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  'NOTE',
+                  style: MonolithTheme.labelLarge
+                      .copyWith(color: MonolithTheme.surface),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Support is voluntary and buys nothing: there is no paid tier and '
+              'no feature behind one. Payments are handled entirely by your '
+              'UPI app or by Buy Me a Coffee — this app never sees them.',
+              style: MonolithTheme.bodyMedium
+                  .copyWith(color: MonolithTheme.surfaceContainerHigh),
+            ),
+          ],
+        ),
+      );
+
+  Future<void> _open(
+    BuildContext context,
+    Uri uri, {
+    required String failureMessage,
+    LaunchMode mode = LaunchMode.platformDefault,
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
+    var opened = false;
+    try {
+      opened = await launchUrl(uri, mode: mode);
+    } catch (_) {
+      // Android throws rather than returning false when nothing can handle the
+      // intent, so both outcomes have to mean the same thing here.
+      opened = false;
+    }
+    if (!opened) {
+      messenger.showSnackBar(SnackBar(content: Text(failureMessage)));
+    }
   }
 }
