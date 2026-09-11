@@ -64,13 +64,16 @@ void main() {
     ApiCredentials? credentials =
         const ApiCredentials(provider: 'GEMINI', key: 'test-key'),
     String? uid = 'uid-123',
+    String token = 'test-id-token',
     Duration timeout = const Duration(seconds: 5),
+    Future<AnalysisCaller?> Function()? caller,
   }) {
     return FoodAnalysisClient(
       httpClient: mock,
       credentialStore: FakeCredentialStore(credentials),
       baseUrl: 'http://test.local:8080',
-      currentUserId: () => uid,
+      caller: caller ??
+          () async => uid == null ? null : (uid: uid, idToken: token),
       timeout: timeout,
     );
   }
@@ -502,6 +505,117 @@ void main() {
       );
       expect(called, isFalse);
     });
+
+    test('says to sign in again rather than blaming the key', () async {
+      final client = clientWith(
+        MockClient((_) async => http.Response(successBody(), 200)),
+        uid: null,
+      );
+
+      await expectLater(
+        client.analyze(image),
+        throwsA(isA<FoodAnalysisException>().having(
+          (e) => e.message, 'message', FoodAnalysisClient.errorSignedOut)),
+      );
+    });
+  });
+
+  group('bearer token', () {
+    test('sends the ID token the service verifies', () async {
+      http.BaseRequest? captured;
+      final client = clientWith(
+        MockClient((request) async {
+          captured = request;
+          return http.Response(successBody(), 200);
+        }),
+        token: 'eyJhbGciOiJSUzI1NiJ9.payload.sig',
+      );
+
+      await client.analyze(image);
+
+      expect(captured!.headers['Authorization'],
+          'Bearer eyJhbGciOiJSUzI1NiJ9.payload.sig');
+    });
+
+    test('still sends X-User-Id, which is what nginx rate-limits on', () async {
+      // Both headers, not one: nginx needs a cheap key before FastAPI has
+      // verified anything, and FastAPI rejects the request if they disagree.
+      http.BaseRequest? captured;
+      final client = clientWith(
+        MockClient((request) async {
+          captured = request;
+          return http.Response(successBody(), 200);
+        }),
+      );
+
+      await client.analyze(image);
+
+      expect(captured!.headers['X-User-Id'], 'uid-123');
+      expect(captured!.headers['Authorization'], isNotNull);
+    });
+
+    test('a rejected session reports the session, not the API key', () async {
+      // Both arrive as 401. Telling the user to update a working API key when
+      // what expired was their login sends them to fix the wrong thing.
+      final client = clientWith(
+        MockClient((_) async => http.Response(
+            '{"detail":"auth: invalid token"}', 401)),
+      );
+
+      await expectLater(
+        client.analyze(image),
+        throwsA(isA<FoodAnalysisException>().having((e) => e.message, 'message',
+            FoodAnalysisClient.errorSessionExpired)),
+      );
+    });
+
+    test('a rejected provider key still blames the key', () async {
+      final client = clientWith(
+        MockClient((_) async =>
+            http.Response('{"detail":"Gemini API Key missing"}', 401)),
+      );
+
+      await expectLater(
+        client.analyze(image),
+        throwsA(isA<FoodAnalysisException>().having(
+            (e) => e.message, 'message', FoodAnalysisClient.errorKeyRejected)),
+      );
+    });
+
+    test('a service missing its project id says so, not "check your key"',
+        () async {
+      final client = clientWith(
+        MockClient((_) async =>
+            http.Response('{"detail":"auth: not configured"}', 503)),
+      );
+
+      await expectLater(
+        client.analyze(image),
+        throwsA(isA<FoodAnalysisException>().having((e) => e.message, 'message',
+            FoodAnalysisClient.errorServiceNotReady)),
+      );
+    });
+
+    test('a failure fetching the token is not called a signed-out user',
+        () async {
+      // getIdToken() hits the network when the cached token has expired. Offline
+      // is not the same as logged out, and the fixes differ.
+      var called = false;
+      final client = clientWith(
+        MockClient((_) async {
+          called = true;
+          return http.Response(successBody(), 200);
+        }),
+        caller: () async => throw const SocketException('offline'),
+      );
+
+      await expectLater(
+        client.analyze(image),
+        throwsA(isA<FoodAnalysisException>().having((e) => e.message, 'message',
+            FoodAnalysisClient.errorUnreachable)),
+      );
+      expect(called, isFalse);
+    });
   });
 
   group('configuration', () {
@@ -531,7 +645,7 @@ void main() {
           const ApiCredentials(provider: 'GEMINI', key: 'k'),
         ),
         baseUrl: 'http://test.local:8080/',
-        currentUserId: () => 'uid-1',
+        caller: () async => (uid: 'uid-1', idToken: 't'),
       );
 
       await client.analyze(image);

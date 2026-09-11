@@ -13,6 +13,8 @@ import '../screens/settings/goals_diet_screen.dart';
 import '../screens/settings/health_connect_screen.dart';
 import '../screens/settings/api_key_screen.dart';
 import '../screens/settings/on_device_model_screen.dart';
+import '../screens/settings/notifications_screen.dart';
+import '../screens/settings/privacy_screen.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -35,6 +37,8 @@ class AppRoutes {
   static const String healthConnect = '/health-connect';
   static const String apiKey = '/api-key';
   static const String onDeviceModel = '/on-device-model';
+  static const String privacy = '/privacy';
+  static const String notifications = '/notifications';
 
   static Map<String, WidgetBuilder> get routes => {
         authGate: (_) => const AuthGate(),
@@ -55,5 +59,7 @@ class AppRoutes {
         healthConnect: (_) => const HealthConnectScreen(),
         apiKey: (_) => const ApiKeyScreen(),
         onDeviceModel: (_) => const OnDeviceModelScreen(),
+        privacy: (_) => const PrivacyScreen(),
+        notifications: (_) => const NotificationsScreen(),
       };
 }

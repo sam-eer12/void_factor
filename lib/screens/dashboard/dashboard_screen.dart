@@ -5,6 +5,8 @@ import '../../theme/monolith_theme.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_drawer.dart';
 import '../../features/auth/auth_provider.dart';
+import '../../features/food_log/food_log_grouping.dart';
+import '../../features/food_log/food_log_providers.dart';
 import '../../features/health/health_providers.dart';
 import '../../models/health_metrics.dart';
 import 'monolith_shell.dart';
@@ -23,6 +25,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget build(BuildContext context) {
     final user = ref.watch(authStateProvider).value;
     final metrics = ref.watch(healthMetricsProvider);
+    // Today's real intake. Until this existed the protein card read a hardcoded
+    // '120g / Daily Target Met' on a screen whose whole job is to be true.
+    final totals = ref.watch(todayTotalsProvider);
     final healthStatus = ref.watch(healthStatusProvider);
     final connected = healthStatus == HealthConnectionStatus.enabled;
 
@@ -30,6 +35,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       key: _scaffoldKey,
       backgroundColor: MonolithTheme.background,
       drawer: MonolithDrawer(
+        userName: (user?.displayName ?? 'USER').toUpperCase(),
         onProfileTap: () {
           Navigator.pop(context);
           MonolithShell.setActiveTab(context, 3, '/settings');
@@ -123,6 +129,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     ),
                     const SizedBox(height: 24),
 
+                    // ── Today's intake ──
+                    //
+                    // Above the health grid, not inside it: calories are the
+                    // number this app exists to show, and steps are context.
+                    GestureDetector(
+                      onTap: () => Navigator.pushNamed(context, '/food-log'),
+                      child: MonolithStatCard(
+                        title: 'Calories Today',
+                        value: _calories(totals),
+                        subtitle: _intakeSubtitle(totals),
+                        icon: Icons.local_fire_department,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
                     // ── Stats Grid ──
                     Row(
                       children: [
@@ -189,12 +210,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: MonolithStatCard(
-                            title: 'Protein',
-                            value: '120g',
-                            subtitle: 'Daily Target Met',
-                            icon: Icons.restaurant,
-                            inverted: true,
+                          child: GestureDetector(
+                            onTap: () =>
+                                Navigator.pushNamed(context, '/food-log'),
+                            child: MonolithStatCard(
+                              title: 'Protein',
+                              value: _macro(totals, (t) => t.proteinG),
+                              subtitle: _intakeSubtitle(totals),
+                              icon: Icons.restaurant,
+                              inverted: true,
+                            ),
                           ),
                         ),
                       ],
@@ -277,6 +302,35 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ),
       ),
     );
+  }
+
+  /// The day's calories, or a dash while they are still being read.
+  ///
+  /// An error reads as a dash too. The dashboard is glanced at, and a failure to
+  /// open a local file is not something the user can act on from here — the
+  /// history screen says so properly when they go looking.
+  String _calories(AsyncValue<DayTotals> totals) {
+    final value = totals.value;
+    if (value == null) return '—';
+    return _formatInt(value.calories.round());
+  }
+
+  String _macro(AsyncValue<DayTotals> totals, double Function(DayTotals) pick) {
+    final value = totals.value;
+    if (value == null) return '—';
+    return '${foodLogAmountLabel(pick(value))}g';
+  }
+
+  /// Says whether the figures above are a real day or an empty one.
+  ///
+  /// A logged zero-calorie day and a day with nothing logged produce identical
+  /// numbers, and only one of them means "you are on target".
+  String _intakeSubtitle(AsyncValue<DayTotals> totals) {
+    final value = totals.value;
+    if (value == null) return 'Reading Your Log';
+    if (value.isEmpty) return 'Nothing Logged Yet';
+    final meals = value.entryCount == 1 ? 'Meal' : 'Meals';
+    return 'From ${value.entryCount} $meals';
   }
 
   // Groups an integer with thousands separators, e.g. 8432 -> "8,432".

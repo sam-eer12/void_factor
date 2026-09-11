@@ -43,3 +43,12 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Firestore rules test harness
+test_rules/node_modules/
+test_rules/package-lock.json
+
+# Android release signing — never commit the keystore or its passwords.
+android/key.properties
+**/*.jks
+**/*.keystore

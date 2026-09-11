@@ -1,0 +1,30 @@
+rules_version = '2';
+
+// The app owns exactly one document per user: users/{uid}. Everything else in
+// the project is denied by omission — a path with no matching allow rule is
+// refused, so this file is the complete access model rather than a list of
+// exceptions to an open default.
+//
+// Until this file existed there were no rules deployed at all, which in a
+// project created from the console means every signed-in user could read every
+// other user's profile.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{uid} {
+      // Signed in, and only your own document. `request.auth.uid` is populated
+      // from a token Firebase itself minted and cannot be set by the caller, so
+      // this single condition is the whole model.
+      //
+      // The document holds the profile, `sessionId` and `createdAt`. It does
+      // not hold provider API keys — those are written only to the device's
+      // secure storage (see session_provider.completeOnboarding step 3) — so
+      // there is no secret here to protect with a finer rule.
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      // Deliberately no `/{document=**}`: subcollections stay denied. The app
+      // creates none, and account deletion depends on that being true — it
+      // deletes this one document and treats the remote footprint as gone.
+    }
+  }
+}

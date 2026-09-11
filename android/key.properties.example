@@ -1,0 +1,14 @@
+# Copy to android/key.properties and fill in. Gitignored — never commit the
+# filled copy or the .jks file it points at.
+#
+# Create the keystore once, and keep it somewhere you will still have in two
+# years: Play Store updates must be signed with the same key, and losing it
+# means publishing a new app listing.
+#
+#   keytool -genkey -v -keystore ~/void-factor-upload.jks \
+#           -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+storePassword=
+keyPassword=
+keyAlias=upload
+storeFile=/absolute/path/to/void-factor-upload.jks

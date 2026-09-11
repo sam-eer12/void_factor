@@ -8,6 +8,7 @@ import '../../theme/monolith_theme.dart';
 import '../../widgets/food_log_row.dart';
 import '../../widgets/monolith_bottom_nav.dart';
 import 'food_entry_form_screen.dart';
+import 'food_log_actions.dart';
 
 /// The full log window, grouped by day, plus the way in to a manual entry.
 ///
@@ -38,7 +39,7 @@ class ManualFoodLogScreen extends ConsumerWidget {
                   children: [
                     _header(context),
                     const SizedBox(height: 24),
-                    _history(ref),
+                    _history(context, ref),
                     const SizedBox(height: 20),
                   ],
                 ),
@@ -127,7 +128,7 @@ class ManualFoodLogScreen extends ConsumerWidget {
         ],
       );
 
-  Widget _history(WidgetRef ref) {
+  Widget _history(BuildContext context, WidgetRef ref) {
     return ref.watch(recentFoodLogProvider).when(
           loading: () => const Padding(
             padding: EdgeInsets.symmetric(vertical: 32),
@@ -151,7 +152,7 @@ class ManualFoodLogScreen extends ConsumerWidget {
                   const SizedBox(height: 12),
                   for (final (row, entry) in group.entries.indexed) ...[
                     if (row > 0) const SizedBox(height: 8),
-                    _logRow(entry),
+                    _logRow(context, ref, entry),
                   ],
                 ],
               ],
@@ -184,11 +185,14 @@ class ManualFoodLogScreen extends ConsumerWidget {
         ),
       );
 
-  Widget _logRow(FoodEntry entry) => FoodLogRow(
+  Widget _logRow(BuildContext context, WidgetRef ref, FoodEntry entry) =>
+      FoodLogRow(
         entry: entry,
         // The day is already the header above, so the row spends its second
         // line on protein instead of repeating it.
         subtitle: '${foodLogAmountLabel(entry.totalProteinG)}G PROTEIN · '
             '${foodLogTimeLabel(entry.loggedAt)}',
+        onEdit: () => editFoodEntry(context, entry),
+        onDelete: () => deleteFoodEntry(context, ref, entry),
       );
 }

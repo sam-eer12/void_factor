@@ -1,0 +1,13 @@
+{
+  "name": "void-factor-rules-tests",
+  "private": true,
+  "type": "module",
+  "description": "Firestore security rules tests. Needs a JDK for the emulator.",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-void-factor \"node --test rules.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.0.0"
+  }
+}

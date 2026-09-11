@@ -1,0 +1,40 @@
+# ${APP_HOSTNAME} is substituted at container start. NGINX_ENVSUBST_FILTER in the
+# compose file restricts substitution to that one name, so nginx's own $variables
+# ($host, $http_x_user_id, ...) survive untouched.
+
+server {
+    listen 80;
+    server_name ${APP_HOSTNAME};
+    default_type application/json;
+
+    # Let's Encrypt's HTTP-01 challenge. Must stay on :80 and must not redirect,
+    # or renewal fails once the certificate it would renew has expired.
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${APP_HOSTNAME};
+    default_type application/json;
+
+    ssl_certificate     /etc/letsencrypt/live/${APP_HOSTNAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${APP_HOSTNAME}/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # Six months. Not preloaded: this host serves an API, and a preload entry is
+    # effectively permanent for the whole domain.
+    add_header Strict-Transport-Security "max-age=15768000" always;
+
+    include /etc/nginx/api_locations.conf;
+}
