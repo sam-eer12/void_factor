@@ -88,7 +88,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     ),
                   ),
                   Text(
-                    'MONOLITH',
+                    'Void_Factor',
                     style: MonolithTheme.headlineLarge,
                   ),
                   GestureDetector(

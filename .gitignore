@@ -52,3 +52,6 @@ test_rules/package-lock.json
 android/key.properties
 **/*.jks
 **/*.keystore
+
+# Impeccable design-critique snapshots (local tool output, not source)
+.impeccable/

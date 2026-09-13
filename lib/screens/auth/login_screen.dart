@@ -35,7 +35,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             children: [
               const SizedBox(height: 60),
 
-              // ── MONOLITH Logo ──
+              // ── Void_Factor Logo ──
               Container(
                 padding: EdgeInsets.zero,
                 decoration: MonolithTheme.invertedCardDecoration,

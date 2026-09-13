@@ -88,7 +88,7 @@ class ManualFoodLogScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 16),
-            Text('MONOLITH FITNESS', style: MonolithTheme.headlineLarge),
+            Text('Void_Factor', style: MonolithTheme.headlineLarge),
           ],
         ),
       );

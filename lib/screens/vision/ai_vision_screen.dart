@@ -125,7 +125,7 @@ class AiVisionScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 16),
-            Text('MONOLITH', style: MonolithTheme.headlineLarge),
+            Text('Void_Factor', style: MonolithTheme.headlineLarge),
           ],
         ),
       );

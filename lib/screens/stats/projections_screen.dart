@@ -156,7 +156,7 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
               ),
             ),
             const SizedBox(width: 16),
-            Text('MONOLITH', style: MonolithTheme.headlineLarge),
+            Text('Void_Factor', style: MonolithTheme.headlineLarge),
           ],
         ),
       );

@@ -45,7 +45,7 @@ class _MonolithAppState extends ConsumerState<MonolithApp>
     return LiquidGlassWidgets.wrap(
       adaptiveQuality: true,
       child: MaterialApp(
-        title: 'void_factor',
+        title: 'Void_Factor',
         navigatorKey: _navigatorKey,
         debugShowCheckedModeBanner: false,
         theme: MonolithTheme.themeData,

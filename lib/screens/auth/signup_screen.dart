@@ -121,9 +121,9 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
               ),
               const SizedBox(height: 32),
 
-              // ── MONOLITH Branding ──
+              // ── Void_Factor Branding ──
               Text(
-                'MONOLITH',
+                'Void_Factor',
                 style: MonolithTheme.displayLarge,
               ),
               const SizedBox(height: 24),

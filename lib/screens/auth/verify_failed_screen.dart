@@ -41,9 +41,9 @@ class VerifyFailedScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 40),
 
-              // ── MONOLITH Branding ──
+              // ── Void_Factor Branding ──
               Text(
-                'MONOLITH',
+                'Void_Factor',
                 style: MonolithTheme.displayLarge,
               ),
               const SizedBox(height: 32),

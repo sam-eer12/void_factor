@@ -18,7 +18,7 @@
          authorized-types version is what detects that. -->
     <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED"/>
     <application
-        android:label="void_factor"
+        android:label="Void_Factor"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity

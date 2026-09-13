@@ -41,7 +41,7 @@ class MonolithDrawer extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'MONOLITH',
+                    'Void_Factor',
                     style: MonolithTheme.displayMedium.copyWith(
                       color: MonolithTheme.surface,
                     ),

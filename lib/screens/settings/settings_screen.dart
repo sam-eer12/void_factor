@@ -100,7 +100,7 @@ class SettingsScreen extends ConsumerWidget {
                               style: MonolithTheme.headlineLarge),
                           const SizedBox(height: 4),
                           Text(
-                            user?.email ?? 'user@monolith.ai',
+                            user?.email ?? 'user@voidfactor.app',
                             style: MonolithTheme.bodyMedium.copyWith(
                               color: MonolithTheme.outline,
                             ),
