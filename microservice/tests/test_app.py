@@ -33,18 +33,28 @@ NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 
 def _fake_gemini(monkeypatch, text):
+    """Stubs the async provider call.
+
+    The fake mirrors `client.aio.models.generate_content`, not the synchronous
+    `client.models.generate_content`: a stub of the sync path would still pass
+    if the provider quietly reverted to the call that blocks the event loop.
+    """
     class FakeResponse:
         pass
     fr = FakeResponse()
     fr.text = text
 
-    class FakeModels:
-        def generate_content(self, *a, **k):
+    class FakeAsyncModels:
+        async def generate_content(self, *a, **k):
             return fr
+
+    class FakeAio:
+        def __init__(self):
+            self.models = FakeAsyncModels()
 
     class FakeClient:
         def __init__(self, *a, **k):
-            self.models = FakeModels()
+            self.aio = FakeAio()
 
     monkeypatch.setattr("app.providers.gemini.genai.Client", FakeClient)
 
