@@ -1,6 +1,5 @@
 import '../../models/projection.dart';
 import '../../models/recommendation.dart';
-import '../../models/user_profile.dart';
 import 'projection_engine.dart';
 
 /// Decides *which* three things the user should hear about, and in what order.
@@ -65,18 +64,12 @@ class RecommendationEngine {
 
   /// The daily energy balance the user's requested rate implies.
   ///
-  /// Zero for a `maintain` goal regardless of the stored weekly rate: the rate
-  /// field still holds whatever was last picked in Goals & Diet, and honouring it
-  /// here would prescribe a deficit to someone who asked to hold steady.
-  static double requiredDailyBalanceKcal(Projection projection) {
-    if (projection.goal == WeightGoal.maintain) return 0;
-    if (projection.targetRatePerWeekKg <= 0) return 0;
-    final direction = projection.remainingKg.isNegative ? -1.0 : 1.0;
-    return direction *
-        projection.targetRatePerWeekKg /
-        7 *
-        ProjectionEngine.kcalPerKg;
-  }
+  /// Lives in [ProjectionEngine] now that the calorie dial prescribes a target
+  /// from it too. Kept here as the name the ranking already calls, because the
+  /// two must never disagree: the card that says "eat 400 fewer" and the dial the
+  /// user checks it against have to be quoting one rule.
+  static double requiredDailyBalanceKcal(Projection projection) =>
+      ProjectionEngine.requiredDailyBalanceKcal(projection);
 
   /// Every candidate, ranked, highest priority first.
   ///

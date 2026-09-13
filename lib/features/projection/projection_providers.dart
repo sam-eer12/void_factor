@@ -6,6 +6,7 @@ import '../auth/session_provider.dart';
 import '../food_log/food_log_providers.dart';
 import '../health/health_providers.dart';
 import '../weight_log/weight_log_providers.dart';
+import 'calorie_budget.dart';
 import 'gemma_model_service.dart';
 import 'projection_engine.dart';
 import 'recommendation_engine.dart';
@@ -43,6 +44,26 @@ final projectionProvider = FutureProvider<Projection>((ref) async {
     foods: foods,
     energy: energy,
     now: ref.read(projectionClockProvider)(),
+  );
+});
+
+/// Today's intake against today's target — what the dashboard dial draws.
+///
+/// The totals are awaited; the projection is not. Reading it as a settled value
+/// means the ring renders as soon as the food log does, and the target appears a
+/// moment later when the profile, weigh-ins and energy window have all arrived.
+/// Awaiting both would hold the number the user just logged hostage to four
+/// sources, and a failure in any of them would blank a dial that has a perfectly
+/// good intake to show — a projection that cannot be built is a missing target,
+/// not a missing day.
+final calorieBudgetProvider = FutureProvider<CalorieBudget>((ref) async {
+  final totals = await ref.watch(todayTotalsProvider.future);
+  final projection = ref.watch(projectionProvider).value;
+
+  return CalorieBudget.from(
+    consumedKcal: totals.calories,
+    entryCount: totals.entryCount,
+    projection: projection,
   );
 });
 

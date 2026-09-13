@@ -2,12 +2,15 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/monolith_theme.dart';
+import '../../widgets/calorie_dial.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_drawer.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/food_log/food_log_grouping.dart';
 import '../../features/food_log/food_log_providers.dart';
 import '../../features/health/health_providers.dart';
+import '../../features/projection/calorie_budget.dart';
+import '../../features/projection/projection_providers.dart';
 import '../../models/health_metrics.dart';
 import 'monolith_shell.dart';
 
@@ -28,6 +31,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     // Today's real intake. Until this existed the protein card read a hardcoded
     // '120g / Daily Target Met' on a screen whose whole job is to be true.
     final totals = ref.watch(todayTotalsProvider);
+    // The same intake, paired with the target the dial measures it against.
+    final budget = ref.watch(calorieBudgetProvider);
+    // Only to tell "still loading" apart from "profile is missing metrics" when
+    // the dial has no target to draw. The budget above carries the target itself.
+    final projection = ref.watch(projectionProvider).value;
     final healthStatus = ref.watch(healthStatusProvider);
     final connected = healthStatus == HealthConnectionStatus.enabled;
 
@@ -133,14 +141,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     //
                     // Above the health grid, not inside it: calories are the
                     // number this app exists to show, and steps are context.
-                    GestureDetector(
+                    //
+                    // A dial rather than a figure because the figure alone never
+                    // answered the question the user opens the app with. 1,400
+                    // is a good day or a bad one entirely depending on a target
+                    // that used to live on a different screen.
+                    CalorieDialCard(
+                      budget: budget.value,
+                      targetHint: calorieTargetHintLabel(projection),
                       onTap: () => Navigator.pushNamed(context, '/food-log'),
-                      child: MonolithStatCard(
-                        title: 'Calories Today',
-                        value: _calories(totals),
-                        subtitle: _intakeSubtitle(totals),
-                        icon: Icons.local_fire_department,
-                      ),
                     ),
                     const SizedBox(height: 12),
 
@@ -302,17 +311,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ),
       ),
     );
-  }
-
-  /// The day's calories, or a dash while they are still being read.
-  ///
-  /// An error reads as a dash too. The dashboard is glanced at, and a failure to
-  /// open a local file is not something the user can act on from here — the
-  /// history screen says so properly when they go looking.
-  String _calories(AsyncValue<DayTotals> totals) {
-    final value = totals.value;
-    if (value == null) return '—';
-    return _formatInt(value.calories.round());
   }
 
   String _macro(AsyncValue<DayTotals> totals, double Function(DayTotals) pick) {

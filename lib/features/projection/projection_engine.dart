@@ -483,6 +483,43 @@ class ProjectionEngine {
   }
 
   // ──────────────────────────────────────────────
+  // The day's calorie target
+  // ──────────────────────────────────────────────
+
+  /// The daily energy balance the user's requested rate implies, kcal.
+  ///
+  /// Zero for a `maintain` goal regardless of the stored weekly rate: the rate
+  /// field still holds whatever was last picked in Goals & Diet, and honouring it
+  /// here would prescribe a deficit to someone who asked to hold steady.
+  ///
+  /// Signed by the direction of travel rather than by the goal, so a user who
+  /// set `lose` and is already below target is not told to keep cutting.
+  static double requiredDailyBalanceKcal(Projection projection) {
+    if (projection.goal == WeightGoal.maintain) return 0;
+    if (projection.targetRatePerWeekKg <= 0) return 0;
+    final direction = projection.remainingKg.isNegative ? -1.0 : 1.0;
+    return direction * projection.targetRatePerWeekKg / 7 * kcalPerKg;
+  }
+
+  /// What the user should eat today, kcal — expenditure plus whatever balance
+  /// their goal asks for. Null when there is no expenditure model to build on.
+  ///
+  /// Null rather than a guess: [tdeeKcal] is zero until height, age and weight
+  /// are all known, and a dial filled against a target of nothing would read as
+  /// authoritative while being arithmetic on a blank profile.
+  ///
+  /// Floored at the user's own BMR, which is the one place this differs from the
+  /// balance the projection extrapolates from. 0.75 kg/week is an 825 kcal/day
+  /// deficit, and on a small body that subtracts to a number no one should be
+  /// shown as a goal to hit. The projection keeps using the unfloored figure —
+  /// it is predicting what a body would do, not prescribing a day's eating.
+  static double? dailyCalorieTargetKcal(Projection projection) {
+    if (projection.tdeeKcal <= 0) return null;
+    final target = projection.tdeeKcal + requiredDailyBalanceKcal(projection);
+    return max(target, projection.bmrKcal);
+  }
+
+  // ──────────────────────────────────────────────
   // Calendar helpers
   // ──────────────────────────────────────────────
 
