@@ -1,29 +1,44 @@
 # Production stack for the OCI instance. Run from this directory:
 #   docker-compose -f docker-compose.prod.yml up -d
 #
-# Differs from the development compose in three ways: TLS on 80/443 instead of
-# plain 8080, a certbot sidecar holding the certificate current, and named
-# volumes so certificates survive a recreate.
+# Differs from the development compose in four ways: TLS on 80/443 instead of
+# plain 8080, a certbot sidecar holding the certificate current, named volumes
+# so certificates survive a recreate, and two microservice replicas behind
+# nginx instead of one.
+
+# The two replicas are identical, so the definition lives here once and each
+# service merges it. They are separate services rather than `deploy.replicas: 2`
+# because nginx has to name each backend individually in its upstream block —
+# one service name with two containers behind it resolves to a single address
+# at nginx start and would pin every request to whichever container answered
+# first. Same `image:` tag on both, so the build runs once and the second
+# service reuses it.
+x-microservice: &microservice
+  build: ../microservice
+  image: void-factor-microservice:latest
+  env_file:
+    - path: ../microservice/.env
+      required: false
+  environment:
+    FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?FIREBASE_PROJECT_ID must be set}
+  expose:
+    - "8000"
+  networks:
+    - internal
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+    interval: 10s
+    timeout: 3s
+    retries: 5
+    start_period: 10s
+  restart: unless-stopped
 
 services:
-  microservice:
-    build: ../microservice
-    env_file:
-      - path: ../microservice/.env
-        required: false
-    environment:
-      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?FIREBASE_PROJECT_ID must be set}
-    expose:
-      - "8000"
-    networks:
-      - internal
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
-    restart: unless-stopped
+  microservice-1:
+    <<: *microservice
+
+  microservice-2:
+    <<: *microservice
 
   nginx:
     image: nginx:alpine
@@ -42,12 +57,18 @@ services:
       - certbot-www:/var/www/certbot:ro
     # The image's entrypoint still runs (that is what does the envsubst); this
     # only replaces the command it execs, adding a reload every 6h so a renewed
-    # certificate is picked up without anyone logging in.
+    # certificate is picked up without anyone logging in. The reload also
+    # re-resolves the upstream names, which is what recovers a replica that
+    # came back on a new container IP.
     command: >
       sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done &
       nginx -g 'daemon off;'"
+    # Both replicas must be healthy before nginx starts, so it never resolves
+    # an upstream name that has no container behind it yet.
     depends_on:
-      microservice:
+      microservice-1:
+        condition: service_healthy
+      microservice-2:
         condition: service_healthy
     networks:
       - internal
