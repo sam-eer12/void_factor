@@ -11,6 +11,14 @@ services:
       - "8000"
     networks:
       - internal
+    # nginx is configured for 4096 connections per worker and the service holds
+    # a socket per request in flight. The engine's default of 1024 open files
+    # would cap both well below that, and the symptom is an accept() failure
+    # rather than anything naming the limit.
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
@@ -31,6 +39,14 @@ services:
         condition: service_healthy
     networks:
       - internal
+    # nginx is configured for 4096 connections per worker and the service holds
+    # a socket per request in flight. The engine's default of 1024 open files
+    # would cap both well below that, and the symptom is an accept() failure
+    # rather than anything naming the limit.
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     restart: unless-stopped
 
 networks:

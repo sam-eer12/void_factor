@@ -8,3 +8,4 @@ tests/
 Dockerfile
 .dockerignore
 requirements-dev.txt
+loadtest/
