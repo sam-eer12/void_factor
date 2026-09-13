@@ -1,0 +1,51 @@
+# Overlay that turns the development stack into a measurable one. Run from the
+# repository root:
+#
+#   docker compose -f docker-compose.yml \
+#                  -f microservice/loadtest/compose.loadtest.yml \
+#                  run --rm generator
+#
+# nginx is untouched on purpose — its rate limit, body size cap and timeouts are
+# the thing being measured. Only the application behind it is swapped for the
+# stub, and only by bind-mount: `loadtest/` is excluded from the image, so
+# nothing here can reach a production build.
+services:
+  microservice:
+    volumes:
+      - ./microservice/loadtest:/app/loadtest:ro
+    environment:
+      LOADTEST_PROVIDER_MS: "${LOADTEST_PROVIDER_MS:-2500}"
+    command:
+      - uvicorn
+      - loadtest.stub_app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --workers
+      - "3"
+      - --log-level
+      - warning
+
+  # Runs inside the compose network rather than on the host, so the measurement
+  # is nginx and the service rather than the container engine's port forwarding.
+  generator:
+    build: ./microservice
+    # Behind a profile so `up` brings up only the stack under test; the probe is
+    # started explicitly by `run`, once, after the stack is healthy.
+    profiles: ["probe"]
+    volumes:
+      - ./microservice/loadtest:/app/loadtest:ro
+      - ./microservice/loadtest/results:/results
+    environment:
+      PROBE_PHASES: "${PROBE_PHASES:-gate,health,analysis}"
+      PROBE_CONC: "${PROBE_CONC:-48}"
+      PROBE_DURATION: "${PROBE_DURATION:-20}"
+      PROBE_UIDS_PER_CONN: "${PROBE_UIDS_PER_CONN:-16}"
+      PROBE_SHARDS: "${PROBE_SHARDS:-2}"
+      PROBE_OUT: /results/stack.json
+    networks:
+      - internal
+    depends_on:
+      - nginx
+    command: ["python", "-m", "loadtest.stack_probe"]

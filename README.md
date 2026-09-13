@@ -49,6 +49,7 @@ lib/
 microservice/                # FastAPI: auth + three provider routes
 ├── app/auth.py              # Firebase ID token verification
 ├── app/providers/           # gemini, openrouter, nvidia
+├── loadtest/                # Capacity and robustness harness + findings
 └── tests/
 
 deploy/                      # Production compose, TLS, systemd, runbook
@@ -102,6 +103,23 @@ flutter run --dart-define=FOOD_API_BASE_URL=http://192.168.1.20:8080
 flutter analyze --fatal-infos && flutter test
 cd microservice && pytest
 ```
+
+### Capacity
+
+```sh
+cd microservice && .venv/bin/python -m loadtest.run_capacity
+```
+
+`microservice/loadtest/README.md` holds the method and the numbers. The short
+version: an analysis costs the stack well under a millisecond of CPU and then
+spends seconds waiting on the provider, so CPU is never the constraint. The
+measured ceiling is **~1,340 analyses/second**, and the limit that actually
+decides how many users fit is **egress** — roughly **415,000 DAU** at four scans
+a day before OCI's free 10 TB/month runs out.
+
+Under fault: a stopped replica costs only the requests it was holding, a total
+provider outage degrades to clean 502s without cascading, and load driven past
+the ceiling recovers fully once released.
 
 Android builds and the Firestore emulator both need a JDK, and there is none on
 PATH here. Android Studio's bundled runtime works for both:
@@ -216,6 +234,17 @@ always cost. It only became visible when a release build first completed.
 - **The log file grows without bound.** Roughly 700 KB per year at ten meals a
   day, read whole at launch. Fine for years, not forever.
 - **The app is very large on arm64** — see "The size problem" above.
+- **A recreated replica can stay dark.** nginx resolves upstream names once at
+  start and declares no `resolver`, so a replica that returns on a new container
+  address is not used again until the six-hourly reload. A restart that keeps
+  the address recovers immediately; a recreate may not.
+- **Requests in flight on a replica that dies are lost, not retried.** Deliberate
+  — replaying a POST could spend the caller's provider quota twice — but the
+  user sees a failed scan.
+- **Ephemeral ports bound a single replica** before CPU does. Past roughly 500
+  new upstream connections a second the source-port range exhausts; a second
+  replica doubles the range, and a larger upstream `keepalive` would reuse
+  rather than recycle.
 
 ---
 

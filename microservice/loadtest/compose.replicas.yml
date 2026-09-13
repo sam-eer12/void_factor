@@ -1,0 +1,88 @@
+# The production topology — two replicas behind one nginx — without TLS, for
+# asking what happens when a replica dies. Run from the repository root:
+#
+#   podman compose -f microservice/loadtest/compose.replicas.yml up -d --wait
+#
+# Standalone rather than an overlay on docker-compose.yml, because the service
+# names differ: production numbers its replicas and development does not.
+x-replica: &replica
+  build: ../../microservice
+  image: void-factor-microservice:latest
+  volumes:
+    - ../../microservice/loadtest:/app/loadtest:ro
+  environment:
+    LOADTEST_PROVIDER_MS: "${LOADTEST_PROVIDER_MS:-2500}"
+    LOADTEST_FAIL_PCT: "${LOADTEST_FAIL_PCT:-0}"
+  expose:
+    - "8000"
+  networks:
+    - internal
+  ulimits:
+    nofile:
+      soft: 65535
+      hard: 65535
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+    interval: 10s
+    timeout: 3s
+    retries: 5
+    start_period: 10s
+  command:
+    - uvicorn
+    - loadtest.stub_app:app
+    - --host
+    - 0.0.0.0
+    - --port
+    - "8000"
+    - --workers
+    - "3"
+    - --log-level
+    - warning
+
+services:
+  microservice-1:
+    <<: *replica
+  microservice-2:
+    <<: *replica
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.replicas.conf:/etc/nginx/nginx.conf:ro
+      - ../../nginx/api_locations.conf:/etc/nginx/api_locations.conf:ro
+    depends_on:
+      microservice-1:
+        condition: service_healthy
+      microservice-2:
+        condition: service_healthy
+    networks:
+      - internal
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+  generator:
+    build: ../../microservice
+    image: void-factor-microservice:latest
+    profiles: ["probe"]
+    volumes:
+      - ../../microservice/loadtest:/app/loadtest:ro
+      - ./results:/results
+    environment:
+      PROBE_PHASES: "${PROBE_PHASES:-analysis}"
+      PROBE_CONC: "${PROBE_CONC:-200}"
+      PROBE_DURATION: "${PROBE_DURATION:-45}"
+      PROBE_UIDS_PER_CONN: "${PROBE_UIDS_PER_CONN:-16}"
+      PROBE_SHARDS: "${PROBE_SHARDS:-2}"
+      PROBE_TIMELINE: "1"
+      PROBE_OUT: /results/robustness.json
+    networks:
+      - internal
+    depends_on:
+      - nginx
+    command: ["python", "-m", "loadtest.stack_probe"]
+
+networks:
+  internal:
+    driver: bridge
