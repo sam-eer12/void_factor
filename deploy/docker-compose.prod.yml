@@ -63,14 +63,24 @@ services:
       - ../nginx/api_locations.conf:/etc/nginx/api_locations.conf:ro
       - certbot-conf:/etc/letsencrypt:ro
       - certbot-www:/var/www/certbot:ro
-    # The image's entrypoint still runs (that is what does the envsubst); this
-    # only replaces the command it execs, adding a reload every 6h so a renewed
-    # certificate is picked up without anyone logging in. The reload also
-    # re-resolves the upstream names, which is what recovers a replica that
-    # came back on a new container IP.
-    command: >
-      sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done &
-      nginx -g 'daemon off;'"
+    # A reload every 6h, so a renewed certificate is picked up without anyone
+    # logging in. The reload also re-resolves the upstream names, which is what
+    # recovers a replica that came back on a new container IP.
+    #
+    # The entrypoint is invoked explicitly, and that is load-bearing. nginx's
+    # image only runs /docker-entrypoint.d/ — the scripts that render
+    # /etc/nginx/templates into conf.d — when its first argument is literally
+    # `nginx`. A bare `sh -c ...` command silently skips them, and the container
+    # comes up healthy on the stock default.conf: port 443 not listening at all,
+    # no /api/ routes, no rate limiting, /health answering 404 from the
+    # filesystem. Passing `nginx` to /docker-entrypoint.sh restores the
+    # rendering and still execs the server, with the reload loop beside it.
+    command:
+      - sh
+      - -c
+      - |
+        while :; do sleep 6h & wait $${!}; nginx -s reload; done &
+        exec /docker-entrypoint.sh nginx -g 'daemon off;'
     # Both replicas must be healthy before nginx starts, so it never resolves
     # an upstream name that has no container behind it yet.
     depends_on:
