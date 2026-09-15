@@ -14,6 +14,7 @@ import '../screens/settings/health_connect_screen.dart';
 import '../screens/settings/api_key_screen.dart';
 import '../screens/settings/on_device_model_screen.dart';
 import '../screens/settings/notifications_screen.dart';
+import '../screens/settings/privacy_policy_screen.dart';
 import '../screens/settings/privacy_screen.dart';
 
 class AppRoutes {
@@ -38,6 +39,7 @@ class AppRoutes {
   static const String apiKey = '/api-key';
   static const String onDeviceModel = '/on-device-model';
   static const String privacy = '/privacy';
+  static const String privacyPolicy = '/privacy-policy';
   static const String notifications = '/notifications';
 
   static Map<String, WidgetBuilder> get routes => {
@@ -60,6 +62,7 @@ class AppRoutes {
         apiKey: (_) => const ApiKeyScreen(),
         onDeviceModel: (_) => const OnDeviceModelScreen(),
         privacy: (_) => const PrivacyScreen(),
+        privacyPolicy: (_) => const PrivacyPolicyScreen(),
         notifications: (_) => const NotificationsScreen(),
       };
 }
