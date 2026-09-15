@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/routes.dart';
 import '../../features/data_transfer/data_bundle.dart';
 import '../../features/data_transfer/data_transfer_providers.dart';
 import '../../theme/monolith_theme.dart';
@@ -17,6 +18,7 @@ import 'delete_account_dialog.dart';
 class PrivacyScreen extends ConsumerWidget {
   const PrivacyScreen({super.key});
 
+  static const String readPolicyLabel = 'READ THE FULL POLICY';
   static const String exportedLabel = 'EXPORT READY';
   static const String nothingImportedLabel =
       'NOTHING NEW — YOU ALREADY HAD ALL OF IT';
@@ -59,6 +61,8 @@ class PrivacyScreen extends ConsumerWidget {
             const SizedBox(height: 16),
             _importCard(context, ref, busy),
             const SizedBox(height: 24),
+            _policyCard(context),
+            const SizedBox(height: 24),
             _deleteCard(context, ref),
             const SizedBox(height: 20),
           ],
@@ -87,6 +91,41 @@ class PrivacyScreen extends ConsumerWidget {
             style: MonolithTheme.bodyMedium.copyWith(
               color: MonolithTheme.outline,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The policy proper. It sits after the export/import controls because
+  /// someone who opened this screen came to do something, not to read; and
+  /// before the delete box because the danger zone stays terminal — nothing
+  /// invites a tap below "DELETE EVERYTHING".
+  Widget _policyCard(BuildContext context) {
+    return MonolithCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.description_outlined,
+                  color: MonolithTheme.primary, size: 20),
+              const SizedBox(width: 12),
+              Text('PRIVACY POLICY', style: MonolithTheme.headlineMedium),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'The whole document: what your account stores, what stays on this '
+            'phone, and what happens to a food photo after you scan it.',
+            style: MonolithTheme.bodyMedium,
+          ),
+          const SizedBox(height: 16),
+          MonolithButton(
+            label: readPolicyLabel,
+            style: MonolithButtonStyle.secondary,
+            onPressed: () =>
+                Navigator.pushNamed(context, AppRoutes.privacyPolicy),
           ),
         ],
       ),

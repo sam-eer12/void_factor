@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_factor/features/data_transfer/data_bundle.dart';
 import 'package:void_factor/features/data_transfer/data_transfer_providers.dart';
+import 'package:void_factor/app/routes.dart';
+import 'package:void_factor/screens/settings/privacy_policy_screen.dart';
 import 'package:void_factor/screens/settings/privacy_screen.dart';
 
 class RecordingGateway implements DataFileGateway {
@@ -124,6 +126,35 @@ void main() {
 
       // Backing out is a decision, not a failure.
       expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('offers the policy itself, not only the data controls',
+        (tester) async {
+      await pumpScreen(tester);
+      // Export/import/delete are what the user can *do*; the policy is what
+      // they were told. A privacy screen that omits it sends them to a browser.
+      expect(find.text(PrivacyScreen.readPolicyLabel), findsOneWidget);
+    });
+
+    testWidgets('the policy row opens the policy', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [dataFileGatewayProvider.overrideWithValue(gateway)],
+          child: MaterialApp(
+            home: const PrivacyScreen(),
+            routes: {
+              AppRoutes.privacyPolicy: (_) => const PrivacyPolicyScreen(),
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.ensureVisible(find.text(PrivacyScreen.readPolicyLabel));
+      await tester.tap(find.text(PrivacyScreen.readPolicyLabel));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PrivacyPolicyScreen), findsOneWidget);
     });
   });
 }

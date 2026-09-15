@@ -53,6 +53,7 @@ microservice/                # FastAPI: auth + three provider routes
 └── tests/
 
 deploy/                      # Production compose, TLS, systemd, runbook
+tool/                        # Generates firebase_hosting/public/privacy.html
 nginx/                       # Shared location rules + the dev server
 test_rules/                  # Firestore security rules tests
 firestore.rules              # The rules themselves
@@ -163,7 +164,7 @@ recommendations were chosen.
 
 ## Before you ship
 
-Four things stand between this repo and users:
+Five things stand between this repo and users:
 
 1. **Deploy the backend.** `deploy/README.md` — OCI Ampere A1, TLS via Let's
    Encrypt, systemd. Note the iptables step; it is the one that catches people.
@@ -175,10 +176,27 @@ Four things stand between this repo and users:
    Without the flag every scan fails with "CAN'T REACH ANALYSIS SERVICE".
 4. **Create an upload keystore.** `android/key.properties.example`. Until it
    exists, release builds fall back to debug signing and cannot be published.
+5. **Publish the privacy policy.** Play requires it at a public URL, separate
+   from the copy in the app:
+   `firebase deploy --only hosting --project signinpractice-bfade` from
+   `firebase_hosting/`, then paste `https://<site>/privacy` into the Play
+   Console listing.
 
 Optional: set `SUPPORT_UPI_VPA` and `SUPPORT_BMC_USERNAME` at build time to
 activate the support screen. Until then it says support is not set up, which is
 the truth.
+
+### The privacy policy is generated
+
+The policy text lives once, in `lib/features/legal/privacy_policy.dart`. The
+in-app screen reads it directly; the hosted page is generated from it:
+
+```sh
+dart run tool/privacy_policy_html.dart   # writes firebase_hosting/public/privacy.html
+```
+
+Edit the policy without regenerating and `test/privacy_policy_test.dart` fails,
+because a policy that has drifted from what the app does is worse than none.
 
 ### The size problem
 
