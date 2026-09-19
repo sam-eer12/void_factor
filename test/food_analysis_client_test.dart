@@ -9,18 +9,25 @@ import 'package:void_factor/features/food_log/food_analysis_client.dart';
 import 'package:void_factor/models/food_entry.dart';
 
 class FakeCredentialStore implements ApiCredentialStore {
-  FakeCredentialStore([this.credentials]);
+  FakeCredentialStore([List<ApiCredentials>? credentials])
+      : credentials = credentials ?? const [];
 
-  ApiCredentials? credentials;
+  /// Already in try order, which is the contract the real store keeps.
+  List<ApiCredentials> credentials;
 
   @override
-  Future<ApiCredentials?> read() async => credentials;
+  Future<List<ApiCredentials>> readAll() async => credentials;
   @override
-  Future<String?> readProvider() async => credentials?.provider;
+  Future<void> write(ApiCredentials c) async => credentials = [c];
   @override
-  Future<void> write(ApiCredentials c) async => credentials = c;
+  Future<void> setDefaultProvider(String provider) async {}
   @override
-  Future<void> delete() async => credentials = null;
+  Future<void> deleteProvider(String provider) async => credentials = [
+        for (final c in credentials)
+          if (c.provider != provider) c,
+      ];
+  @override
+  Future<void> deleteAll() async => credentials = const [];
 }
 
 /// The success body the microservice returns: `normalize()` output.
@@ -30,9 +37,14 @@ String successBody({
   Object? proteinG = 42,
   Object? carbsG = 30,
   Object? fatsG = 12,
+  /// Left out of the body entirely when null — which is what the service
+  /// returned before it carried a count, and what a model that ignores the key
+  /// still produces.
+  Object? quantity,
 }) {
   return jsonEncode({
     'name': name,
+    'quantity': ?quantity,
     'nutrients': {
       'calories': calories,
       'protein_g': proteinG,
@@ -63,6 +75,9 @@ void main() {
     MockClient mock, {
     ApiCredentials? credentials =
         const ApiCredentials(provider: 'GEMINI', key: 'test-key'),
+    /// Several keys in try order, for the fallback path. Wins over
+    /// [credentials] when given.
+    List<ApiCredentials>? chain,
     String? uid = 'uid-123',
     String token = 'test-id-token',
     Duration timeout = const Duration(seconds: 5),
@@ -70,7 +85,7 @@ void main() {
   }) {
     return FoodAnalysisClient(
       httpClient: mock,
-      credentialStore: FakeCredentialStore(credentials),
+      credentialStore: FakeCredentialStore(chain ?? [?credentials]),
       baseUrl: 'http://test.local:8080',
       caller: caller ??
           () async => uid == null ? null : (uid: uid, idToken: token),
@@ -185,7 +200,7 @@ void main() {
         return http.Response(successBody(calories: 450), 200);
       }));
 
-      final (_, nutrients) = await client.analyze(image);
+      final (name: _, :nutrients, quantity: _) = await client.analyze(image);
 
       expect(nutrients.calories, 450);
     });
@@ -197,7 +212,7 @@ void main() {
         return http.Response(successBody(), 200);
       }));
 
-      final (name, nutrients) = await client.analyze(image);
+      final (:name, :nutrients, quantity: _) = await client.analyze(image);
 
       expect(name, 'Grilled Chicken Salad');
       // The model type crosses the boundary, not the raw snake_case wire map.
@@ -217,7 +232,7 @@ void main() {
         );
       }));
 
-      final (_, nutrients) = await client.analyze(image);
+      final (name: _, :nutrients, quantity: _) = await client.analyze(image);
 
       expect(nutrients.calories, 450);
       expect(nutrients.proteinG, 0);
@@ -232,7 +247,7 @@ void main() {
         return http.Response(successBody(name: ''), 200);
       }));
 
-      final (name, nutrients) = await client.analyze(image);
+      final (:name, :nutrients, quantity: _) = await client.analyze(image);
 
       expect(name, '');
       expect(nutrients.calories, 450);
@@ -243,7 +258,7 @@ void main() {
         return http.Response(successBody(name: '  Oatmeal  '), 200);
       }));
 
-      final (name, _) = await client.analyze(image);
+      final (:name, nutrients: _, quantity: _) = await client.analyze(image);
 
       expect(name, 'Oatmeal');
     });
@@ -642,7 +657,7 @@ void main() {
           return http.Response(successBody(), 200);
         }),
         credentialStore: FakeCredentialStore(
-          const ApiCredentials(provider: 'GEMINI', key: 'k'),
+          const [ApiCredentials(provider: 'GEMINI', key: 'k')],
         ),
         baseUrl: 'http://test.local:8080/',
         caller: () async => (uid: 'uid-1', idToken: 't'),
@@ -651,6 +666,281 @@ void main() {
       await client.analyze(image);
 
       expect(captured!.url.toString(), 'http://test.local:8080/api/v1/gemini');
+    });
+  });
+  group('falling back to another provider', () {
+    /// Answers each request by its route, and records the order they arrived.
+    MockClient routed(Map<String, http.Response> byPath, List<String> seen) {
+      return MockClient((request) async {
+        final path = request.url.path.split('/').last;
+        seen.add(path);
+        return byPath[path] ??
+            http.Response(detailBody('provider error: 500'), 502);
+      });
+    }
+
+    test('tries the next key when the first one is rejected', () async {
+      final seen = <String>[];
+      final client = clientWith(
+        routed({
+          'gemini': http.Response(detailBody('invalid key'), 401),
+          'openrouter': http.Response(successBody(name: 'Rice Bowl'), 200),
+        }, seen),
+        chain: const [
+          ApiCredentials(provider: 'GEMINI', key: 'g'),
+          ApiCredentials(provider: 'OPENROUTER', key: 'or'),
+        ],
+      );
+
+      final (:name, nutrients: _, quantity: _) = await client.analyze(image);
+
+      // A revoked key should cost a second or two, not a trip to Settings.
+      expect(seen, ['gemini', 'openrouter']);
+      expect(name, 'Rice Bowl');
+    });
+
+    test('tries the next key when the provider itself is failing', () async {
+      final seen = <String>[];
+      final client = clientWith(
+        routed({
+          'gemini': http.Response(detailBody('provider error: 500'), 502),
+          'openrouter': http.Response(successBody(), 200),
+        }, seen),
+        chain: const [
+          ApiCredentials(provider: 'GEMINI', key: 'g'),
+          ApiCredentials(provider: 'OPENROUTER', key: 'or'),
+        ],
+      );
+
+      await client.analyze(image);
+
+      expect(seen, ['gemini', 'openrouter']);
+    });
+
+    test('sends each attempt with that provider\'s own key and route',
+        () async {
+      final headers = <String, String?>{};
+      final client = clientWith(
+        MockClient((request) async {
+          final path = request.url.path.split('/').last;
+          headers[path] = request.headers['X-${path[0].toUpperCase()}'
+              '${path.substring(1)}-Key'];
+          return path == 'nvidia'
+              ? http.Response(successBody(), 200)
+              : http.Response(detailBody('invalid key'), 401);
+        }),
+        chain: const [
+          ApiCredentials(provider: 'GEMINI', key: 'g-key'),
+          ApiCredentials(provider: 'NVIDIA NIM', key: 'nv-key'),
+        ],
+      );
+
+      await client.analyze(image);
+
+      // Carrying the first provider's key to the second would guarantee the
+      // fallback fails for the same reason the leader did.
+      expect(headers, {'gemini': 'g-key', 'nvidia': 'nv-key'});
+    });
+
+    test('stops at the first key that works', () async {
+      final seen = <String>[];
+      final client = clientWith(
+        routed({'gemini': http.Response(successBody(), 200)}, seen),
+        chain: const [
+          ApiCredentials(provider: 'GEMINI', key: 'g'),
+          ApiCredentials(provider: 'OPENROUTER', key: 'or'),
+        ],
+      );
+
+      await client.analyze(image);
+
+      expect(seen, ['gemini']);
+    });
+
+    test('does not spend a second scan on a rate limit', () async {
+      final seen = <String>[];
+      final client = clientWith(
+        routed({'gemini': http.Response('', 429)}, seen),
+        chain: const [
+          ApiCredentials(provider: 'GEMINI', key: 'g'),
+          ApiCredentials(provider: 'OPENROUTER', key: 'or'),
+        ],
+      );
+
+      // nginx counts *this user's* requests, not the provider's, so a second
+      // attempt would spend another of the ten and meet the same wall.
+      await expectLater(
+        () => client.analyze(image),
+        throwsA(isA<FoodAnalysisException>().having(
+            (e) => e.message, 'message', FoodAnalysisClient.errorRateLimit)),
+      );
+      expect(seen, ['gemini']);
+    });
+
+    test('does not retry elsewhere when the service itself is refusing',
+        () async {
+      final seen = <String>[];
+      final client = clientWith(
+        routed({'gemini': http.Response(detailBody('auth: no project'), 503)},
+            seen),
+        chain: const [
+          ApiCredentials(provider: 'GEMINI', key: 'g'),
+          ApiCredentials(provider: 'OPENROUTER', key: 'or'),
+        ],
+      );
+
+      // All three providers sit behind the same backend.
+      await expectLater(() => client.analyze(image), throwsA(isA<Exception>()));
+      expect(seen, ['gemini']);
+    });
+
+    test('does not retry elsewhere when the model could not read the photo',
+        () async {
+      final seen = <String>[];
+      final client = clientWith(
+        routed({
+          'gemini':
+              http.Response(detailBody('invalid response from model'), 502),
+        }, seen),
+        chain: const [
+          ApiCredentials(provider: 'GEMINI', key: 'g'),
+          ApiCredentials(provider: 'OPENROUTER', key: 'or'),
+        ],
+      );
+
+      // The photo is the problem, not the key: falling through would spend
+      // three scans to arrive at the same "enter it manually".
+      await expectLater(
+        () => client.analyze(image),
+        throwsA(isA<FoodAnalysisException>().having((e) => e.message, 'message',
+            FoodAnalysisClient.errorUnreadablePhoto)),
+      );
+      expect(seen, ['gemini']);
+    });
+
+    test('reports the leading key\'s failure when every key failed', () async {
+      final seen = <String>[];
+      final client = clientWith(
+        routed({
+          'gemini': http.Response(detailBody('invalid key'), 401),
+          'openrouter': http.Response(detailBody('provider error: 500'), 502),
+        }, seen),
+        chain: const [
+          ApiCredentials(provider: 'GEMINI', key: 'g'),
+          ApiCredentials(provider: 'OPENROUTER', key: 'or'),
+        ],
+      );
+
+      // The leader is the key the user nominated and the one they can act on;
+      // a fallback's unrelated complaint would send them to fix the wrong
+      // thing.
+      await expectLater(
+        () => client.analyze(image),
+        throwsA(isA<FoodAnalysisException>().having((e) => e.message, 'message',
+            FoodAnalysisClient.errorKeyRejected)),
+      );
+      expect(seen, ['gemini', 'openrouter']);
+    });
+
+    test('walks all three when the first two are rejected', () async {
+      final seen = <String>[];
+      final client = clientWith(
+        routed({
+          'gemini': http.Response(detailBody('invalid key'), 401),
+          'openrouter': http.Response(detailBody('invalid key'), 401),
+          'nvidia': http.Response(successBody(), 200),
+        }, seen),
+        chain: const [
+          ApiCredentials(provider: 'GEMINI', key: 'g'),
+          ApiCredentials(provider: 'OPENROUTER', key: 'or'),
+          ApiCredentials(provider: 'NVIDIA NIM', key: 'nv'),
+        ],
+      );
+
+      await client.analyze(image);
+
+      expect(seen, ['gemini', 'openrouter', 'nvidia']);
+    });
+
+    test('asks for no key at all when none are saved', () async {
+      var requests = 0;
+      final client = clientWith(
+        MockClient((_) async {
+          requests++;
+          return http.Response(successBody(), 200);
+        }),
+        chain: const [],
+      );
+
+      await expectLater(
+        () => client.analyze(image),
+        throwsA(isA<FoodAnalysisException>().having(
+            (e) => e.message, 'message', FoodAnalysisClient.errorNoKey)),
+      );
+      expect(requests, 0);
+    });
+  });
+  group('the serving count', () {
+    test('returns how many servings the plate held', () async {
+      final client = clientWith(MockClient((_) async {
+        return http.Response(successBody(calories: 262, quantity: 3), 200);
+      }));
+
+      final analysis = await client.analyze(image);
+
+      // Three samosas at 262 each. The nutrients stay per serving; the count
+      // is what the form's stepper opens on.
+      expect(analysis.quantity, 3);
+      expect(analysis.nutrients.calories, 262);
+    });
+
+    test('reads one serving when the response carries no count', () async {
+      final client = clientWith(MockClient((_) async {
+        return http.Response(successBody(), 200);
+      }));
+
+      expect((await client.analyze(image)).quantity, 1);
+    });
+
+    test('reads one serving for a count that makes no sense', () async {
+      // NaN and infinity are excluded deliberately: JSON cannot carry them, so
+      // the client can only meet them through `parsing.py`, whose own suite
+      // covers that.
+      for (final bad in [0, -3, 'lots', '', <int>[3]]) {
+        final client = clientWith(MockClient((_) async {
+          return http.Response(successBody(quantity: bad), 200);
+        }));
+
+        // The nutrients still describe one serving, so a nonsense count costs
+        // the multiplier rather than the whole reading.
+        expect((await client.analyze(image)).quantity, 1, reason: '$bad');
+      }
+    });
+
+    test('accepts a count the model sent as a string', () async {
+      final client = clientWith(MockClient((_) async {
+        return http.Response(successBody(quantity: '4'), 200);
+      }));
+
+      expect((await client.analyze(image)).quantity, 4);
+    });
+
+    test('snaps a fractional count onto the stepper\'s half steps', () async {
+      final client = clientWith(MockClient((_) async {
+        return http.Response(successBody(quantity: 2.7), 200);
+      }));
+
+      // 2.7 would leave every later tap off the grid — 3.2x, 3.7x — for a
+      // figure that was an estimate to begin with.
+      expect((await client.analyze(image)).quantity, 2.5);
+    });
+
+    test('clamps a count the stepper could never reach', () async {
+      final client = clientWith(MockClient((_) async {
+        return http.Response(successBody(quantity: 500), 200);
+      }));
+
+      expect((await client.analyze(image)).quantity, FoodEntry.maxQuantity);
     });
   });
 }

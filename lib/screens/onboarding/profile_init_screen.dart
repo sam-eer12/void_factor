@@ -5,6 +5,7 @@ import '../../widgets/monolith_button.dart';
 import '../../widgets/monolith_text_field.dart';
 import '../../widgets/monolith_card.dart';
 import '../../features/auth/session_provider.dart';
+import '../../features/food_log/api_credentials.dart';
 
 class ProfileInitScreen extends ConsumerStatefulWidget {
   const ProfileInitScreen({super.key});
@@ -220,7 +221,7 @@ class _ProfileInitScreenState extends ConsumerState<ProfileInitScreen> {
                       ),
                       const SizedBox(height: 8),
                       Row(
-                        children: ['GEMINI', 'OPENROUTER', 'NVIDIA NIM'].map((provider) {
+                        children: kApiProviders.map((provider) {
                           final isSelected = _selectedProvider == provider;
                           return Expanded(
                             child: GestureDetector(
@@ -229,7 +230,7 @@ class _ProfileInitScreenState extends ConsumerState<ProfileInitScreen> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                                 margin: EdgeInsets.only(
-                                  right: provider != 'NVIDIA NIM' ? 6 : 0,
+                                  right: provider != kApiProviders.last ? 6 : 0,
                                 ),
                                 decoration: BoxDecoration(
                                   color: isSelected

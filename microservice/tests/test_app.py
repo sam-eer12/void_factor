@@ -206,3 +206,82 @@ def test_openrouter_non_json_200_returns_502():
         files={"image": ("food.jpg", b"x", "image/jpeg")},
     )
     assert resp.status_code == 502
+
+
+# ── The serving count ──
+#
+# The nutrients describe one serving; `quantity` says how many of it are on the
+# plate. The split exists because that is how the app stores and edits an entry,
+# so these tests pin both halves of the contract.
+
+MULTI_PIECE_JSON = (
+    '{"name":"Samosa","quantity":3,"nutrients":'
+    '{"calories":262,"protein_g":3.5,"carbs_g":24,"fats_g":17}}'
+)
+
+
+def test_response_carries_the_serving_count(monkeypatch):
+    _fake_gemini(monkeypatch, MULTI_PIECE_JSON)
+    resp = client.post(
+        "/api/v1/gemini",
+        headers={"X-Gemini-Key": "test", "X-User-Id": "u1"},
+        files={"image": ("food.jpg", b"fakebytes", "image/jpeg")},
+    )
+    body = resp.json()
+    assert body["quantity"] == 3
+    # Per piece, not per plate: 262 is one samosa. Totalling here would make the
+    # form's per-serving fields wrong the moment the user changed the count.
+    assert body["nutrients"]["calories"] == 262
+
+
+def test_response_defaults_the_count_to_one(monkeypatch):
+    # FOOD_JSON predates the field, which is exactly what an older or lazier
+    # model still returns.
+    _fake_gemini(monkeypatch, FOOD_JSON)
+    resp = client.post(
+        "/api/v1/gemini",
+        headers={"X-Gemini-Key": "test", "X-User-Id": "u1"},
+        files={"image": ("food.jpg", b"fakebytes", "image/jpeg")},
+    )
+    assert resp.json()["quantity"] == 1.0
+
+
+def test_normalize_reads_the_count():
+    from app.parsing import normalize
+    assert normalize({"name": "Samosa", "quantity": 3})["quantity"] == 3.0
+
+
+def test_normalize_reads_a_count_the_model_named_differently():
+    from app.parsing import normalize
+    # The prompt asks for `quantity`; a model that answers `servings` or `count`
+    # has still counted the plate, and dropping that to 1 would silently third
+    # the user's calories.
+    assert normalize({"name": "Samosa", "servings": 2})["quantity"] == 2.0
+    assert normalize({"name": "Samosa", "count": 4})["quantity"] == 4.0
+
+
+def test_normalize_defaults_a_missing_count_to_one():
+    from app.parsing import normalize
+    assert normalize({"name": "Banana"})["quantity"] == 1.0
+
+
+def test_normalize_defaults_an_unusable_count_to_one():
+    from app.parsing import normalize
+    # The nutrients still describe one serving, so a nonsense count costs the
+    # multiplier rather than the reading.
+    for bad in (None, 0, -2, "lots", "", [3], float("nan"), float("inf")):
+        assert normalize({"name": "Banana", "quantity": bad})["quantity"] == 1.0
+
+
+def test_normalize_accepts_a_count_sent_as_a_string():
+    from app.parsing import normalize
+    assert normalize({"name": "Samosa", "quantity": "3"})["quantity"] == 3.0
+
+
+def test_prompt_asks_for_per_serving_figures_and_a_count():
+    from app import config
+    # The whole split depends on the model being told about it, and the prompt
+    # is the only place that happens.
+    assert '"quantity"' in config.PROMPT
+    assert "ONE piece or serving" in config.PROMPT
+    assert "never the whole plate" in config.PROMPT.replace("\n", " ")

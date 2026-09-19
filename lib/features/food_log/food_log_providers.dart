@@ -85,18 +85,18 @@ final imageCaptureGatewayProvider = Provider<ImageCaptureGateway>((ref) {
 /// the result so the screen knows whether to navigate, and the three outcomes
 /// are kept on separate channels: a draft means go to the form, `null` means the
 /// user cancelled and nothing should happen, and a throw means show the message.
-class VisionAnalysisController extends AsyncNotifier<(String, Nutrients)?> {
+class VisionAnalysisController extends AsyncNotifier<FoodAnalysis?> {
   static const String errorPermissionDenied =
       'PERMISSION DENIED — ENABLE IN SETTINGS';
 
   @override
-  Future<(String, Nutrients)?> build() async => null;
+  Future<FoodAnalysis?> build() async => null;
 
   /// Picks an image, compresses it, and analyses it.
   ///
   /// Returns `null` if the user dismissed the picker. Throws
   /// [FoodAnalysisException] with display-ready copy on any failure.
-  Future<(String, Nutrients)?> capture(ImageSource source) async {
+  Future<FoodAnalysis?> capture(ImageSource source) async {
     state = const AsyncLoading();
     File? image;
     try {
@@ -135,7 +135,7 @@ class VisionAnalysisController extends AsyncNotifier<(String, Nutrients)?> {
 }
 
 final visionAnalysisProvider =
-    AsyncNotifierProvider<VisionAnalysisController, (String, Nutrients)?>(() {
+    AsyncNotifierProvider<VisionAnalysisController, FoodAnalysis?>(() {
   return VisionAnalysisController();
 });
 

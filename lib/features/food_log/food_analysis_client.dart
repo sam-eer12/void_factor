@@ -30,6 +30,15 @@ class FoodAnalysisException implements Exception {
 /// source them independently could produce a combination that always 401s.
 typedef AnalysisCaller = ({String uid, String idToken});
 
+/// What one analysis came back with.
+///
+/// [nutrients] always describe a single serving and [quantity] is how many of
+/// that serving the model counted on the plate — the same split [FoodEntry]
+/// stores, so the form can seed its stepper without re-deriving anything. A
+/// record rather than a third tuple slot: `draft.$3` says nothing at a call
+/// site, and these three travel together everywhere.
+typedef FoodAnalysis = ({String name, Nutrients nutrients, double quantity});
+
 /// Posts a photo to the analysis microservice and returns what it recognised.
 ///
 /// The microservice fronts three providers behind nginx. nginx rate-limits on
@@ -37,6 +46,13 @@ typedef AnalysisCaller = ({String uid, String idToken});
 /// every call carries the signed-in uid. The uid is not what authorizes the
 /// call — FastAPI verifies the bearer token — but nginx cannot verify a JWT, so
 /// it needs a cheap key of its own.
+///
+/// A user may have a key for more than one of those providers. The store hands
+/// them over already ordered — the one they nominated first — and [analyze]
+/// walks that order, so a revoked key or a provider outage is absorbed here
+/// rather than becoming a trip to Settings. Each attempt is a real request and
+/// costs one of the ten per minute, which is why only failures another provider
+/// could actually fix are worth continuing past.
 class FoodAnalysisClient {
   /// Outlasts the backend's own timeout deliberately.
   /// `openai_compatible.py` builds `httpx.AsyncClient(timeout=60)`, so giving up
@@ -132,11 +148,11 @@ class FoodAnalysisClient {
   /// nutrients. Quantity is the user's business, applied later in the form.
   ///
   /// Throws [FoodAnalysisException] with display-ready copy on every failure.
-  Future<(String, Nutrients)> analyze(File image) async {
-    final credentials = await _credentials.read();
+  Future<FoodAnalysis> analyze(File image) async {
+    final credentials = await _credentials.readAll();
     // Checked before touching the network: a keyless request would spend one of
     // the user's ten scans per minute to earn a 401.
-    if (credentials == null) throw const FoodAnalysisException(errorNoKey);
+    if (credentials.isEmpty) throw const FoodAnalysisException(errorNoKey);
 
     final AnalysisCaller? caller;
     try {
@@ -157,14 +173,60 @@ class FoodAnalysisClient {
       throw const FoodAnalysisException(errorSignedOut);
     }
 
-    final slug = providerSlug(credentials.provider);
-
+    // Read once and reused across attempts. Re-reading per provider would go to
+    // the filesystem three times for bytes that cannot have changed, and would
+    // turn a file deleted mid-fallback into a second, different failure.
     final List<int> bytes;
     try {
       bytes = await image.readAsBytes();
     } on FileSystemException {
       throw const FoodAnalysisException(errorUnreadablePhoto);
     }
+
+    // Whatever the chain does, the *first* provider's failure is what gets
+    // reported: it is the key the user nominated and the one they can act on,
+    // and a fallback's unrelated complaint would send them to fix the wrong
+    // thing.
+    FoodAnalysisException? firstFailure;
+    for (final credential in credentials) {
+      try {
+        return await _attempt(credential, caller, bytes);
+      } on FoodAnalysisException catch (error) {
+        firstFailure ??= error;
+        if (!_isWorthAnotherProvider(error.message)) break;
+      }
+    }
+    throw firstFailure!;
+  }
+
+  /// Whether a different provider could plausibly succeed where this one did
+  /// not.
+  ///
+  /// Deliberately narrow. A rate limit is nginx counting *this user's* requests
+  /// rather than the provider's, so a second attempt would spend another of the
+  /// ten and meet the same wall. A session or reachability failure belongs to
+  /// the app's own backend, which all three providers sit behind. And a photo
+  /// the model could not read is the photo's problem, not the key's — falling
+  /// through there would spend three scans to arrive at the same "enter it
+  /// manually".
+  static bool _isWorthAnotherProvider(String message) =>
+      message == errorKeyRejected ||
+      message == errorProviderFailed ||
+      // Not a failure of the request at all: this build does not recognise the
+      // stored provider, so there was never anything to try for it. The next
+      // one may be perfectly fine.
+      message == errorUnknownProvider;
+
+  /// One request to one provider.
+  ///
+  /// Every failure leaves as a [FoodAnalysisException], so the only decision
+  /// left to [analyze] is whether to try the next provider.
+  Future<FoodAnalysis> _attempt(
+    ApiCredentials credentials,
+    AnalysisCaller caller,
+    List<int> bytes,
+  ) async {
+    final slug = providerSlug(credentials.provider);
 
     final request =
         http.MultipartRequest('POST', Uri.parse('$_baseUrl/api/v1/$slug'))
@@ -199,7 +261,7 @@ class FoodAnalysisClient {
     return _parseSuccess(response.body);
   }
 
-  (String, Nutrients) _parseSuccess(String body) {
+  FoodAnalysis _parseSuccess(String body) {
     final Object? decoded;
     try {
       decoded = jsonDecode(body);
@@ -215,11 +277,28 @@ class FoodAnalysisClient {
       // normalize() falls back to "" for a name no model supplied. An empty
       // name is not a failure: the macros are still worth keeping, and the
       // form's validator makes the user name it before saving.
-      decoded['name']?.toString().trim() ?? '',
-      rawNutrients is Map<String, dynamic>
+      name: decoded['name']?.toString().trim() ?? '',
+      nutrients: rawNutrients is Map<String, dynamic>
           ? Nutrients.fromApi(rawNutrients)
           : const Nutrients(),
+      // The model counts pieces; the stepper works in half servings and has
+      // bounds of its own. Snapped here so the form never opens on a quantity
+      // its own control could not have produced.
+      quantity: FoodEntry.snapQuantity(_quantityOf(decoded['quantity'])),
     );
+  }
+
+  /// How many servings the plate holds, defaulting to one.
+  ///
+  /// `parsing.py` already coerces this, so anything unusable here means the
+  /// response did not come from the service. One serving is the honest reading
+  /// either way — the nutrients describe one, and the user can step it.
+  static double _quantityOf(Object? value) {
+    final quantity = value is num
+        ? value.toDouble()
+        : double.tryParse(value?.toString().trim() ?? '');
+    if (quantity == null || !quantity.isFinite || quantity <= 0) return 1.0;
+    return quantity;
   }
 
   /// Turns a status plus FastAPI's `{"detail": ...}` into one next action.

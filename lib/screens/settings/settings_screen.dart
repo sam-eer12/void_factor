@@ -238,7 +238,7 @@ class SettingsScreen extends ConsumerWidget {
                                   color: MonolithTheme.surface, size: 20),
                               const SizedBox(width: 12),
                               Text(
-                                'API KEY',
+                                'API KEYS',
                                 style:
                                     MonolithTheme.headlineMedium.copyWith(
                                   color: MonolithTheme.surface,
@@ -256,7 +256,7 @@ class SettingsScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 16),
                           MonolithButton(
-                            label: 'MANAGE KEY',
+                            label: 'MANAGE KEYS',
                             style: MonolithButtonStyle.secondary,
                             onPressed: () => Navigator.pushNamed(
                                 context, AppRoutes.apiKey),
@@ -319,11 +319,16 @@ class SettingsScreen extends ConsumerWidget {
   // about their lifetime, so it says what it actually knows instead.
   String _keyStatusLine(AsyncValue<ApiCredentialStatus> status) {
     return switch (status) {
-      AsyncData(value: (provider: final provider, hasKey: true)) =>
-        'Using $provider for food analysis.',
-      AsyncData() => 'No key set. Food analysis is unavailable until you add '
-          'one.',
-      AsyncError() => "Couldn't read the saved key.",
+      AsyncData(value: (savedProviders: final saved)) when saved.isEmpty =>
+        'No key set. Food analysis is unavailable until you add one.',
+      AsyncData(value: (savedProviders: final saved)) when saved.length == 1 =>
+        'Using ${saved.single} for food analysis.',
+      // Naming the fallbacks here rather than only the leader: a scan that
+      // quietly succeeded on the second key would otherwise look like the first
+      // one working.
+      AsyncData(value: (savedProviders: final saved)) =>
+        'Using ${saved.first}, falling back to ${saved.skip(1).join(', ')}.',
+      AsyncError() => "Couldn't read the saved keys.",
       _ => 'Checking…',
     };
   }
