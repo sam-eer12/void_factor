@@ -38,6 +38,16 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- Opt out of the engine's own deep-link handling. Left on, Flutter
+                 takes the incoming VIEW intent and pushes its *path* onto the
+                 Navigator — and `/__/auth/action` is not a route, so the link
+                 became an unknown-route error and never reached the
+                 `app_links` stream LinkVerificationService listens to. With it
+                 off the intent is delivered to the plugin, which is the only
+                 thing that can read the oobCode out of the query string. -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>

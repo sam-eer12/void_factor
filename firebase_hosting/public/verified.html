@@ -1,16 +1,15 @@
 <!DOCTYPE html>
-<!-- The site root, and — via the catch-all rewrite in firebase.json — every
-     path that is not a real file. It therefore must not claim anything about
-     the reader's state: it used to say "Verification Complete", which is a lie
-     for every visitor who did not arrive from an auth link. The page that does
-     make that claim is verified.html, reached only as an action link's
-     continue URL. -->
+<!-- The page a Firebase auth action link redirects to once the code has been
+     applied. It is reached from a *browser* — typically a laptop, because a
+     link clicked on the phone opens the app instead — so it must not pretend
+     to be able to continue the flow here. Its only job is to say the email is
+     verified and send the reader back to the phone. -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Void_Factor</title>
-    <meta name="description" content="Void_Factor — nutrition tracking with on-device AI food recognition, health integration, and weight projections.">
+    <title>Email Verified — Void_Factor</title>
+    <meta name="description" content="Your Void_Factor email address has been verified. Return to the app on your phone to continue.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700;900&display=swap" rel="stylesheet">
@@ -54,7 +53,6 @@
             font-size: 28px;
             font-weight: 900;
             letter-spacing: -1px;
-            margin-bottom: 16px;
             text-transform: uppercase;
         }
         .divider {
@@ -63,34 +61,37 @@
             background-color: #000000;
             margin: 0 auto 30px auto;
         }
+        .status-box {
+            background-color: #000000;
+            color: #FFFFFF;
+            border: 2px solid #000000;
+            padding: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+        .status-box svg {
+            width: 48px;
+            height: 48px;
+            fill: none;
+            stroke: #FFFFFF;
+            stroke-width: 2.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
         p {
             font-size: 16px;
             line-height: 1.6;
             color: #555555;
             margin-bottom: 24px;
         }
-        .button {
-            display: block;
-            width: 100%;
-            background-color: #FFFFFF;
+        p:last-child {
+            margin-bottom: 0;
+        }
+        strong {
             color: #000000;
-            border: 2px solid #000000;
-            padding: 14px;
-            font-weight: 700;
-            text-decoration: none;
-            text-transform: uppercase;
-            font-size: 14px;
-            letter-spacing: 1px;
-            box-shadow: 4px 4px 0px #000000;
-            transition: transform 0.1s, box-shadow 0.1s;
-        }
-        .button:hover {
-            transform: translate(-2px, -2px);
-            box-shadow: 6px 6px 0px #000000;
-        }
-        .button:active {
-            transform: translate(2px, 2px);
-            box-shadow: 2px 2px 0px #000000;
         }
     </style>
 </head>
@@ -98,12 +99,18 @@
     <div class="container">
         <div class="logo-box">VOID_FACTOR</div>
 
-        <h1>Nutrition, on your own device</h1>
+        <div class="status-box">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M8 12.5l3 3 5-6"></path>
+            </svg>
+            <h1>Email Verified</h1>
+        </div>
+
         <div class="divider"></div>
 
-        <p>Void_Factor runs its food recognition on your phone. This domain exists to serve the app's sign-in links and its privacy policy — there is nothing to use here.</p>
-
-        <a href="/privacy" class="button">Privacy Policy</a>
+        <p>Your email address is confirmed.</p>
+        <p>Open <strong>Void_Factor</strong> on your phone — it detects the confirmation on its own and carries on from where you left off. You can close this tab.</p>
     </div>
 </body>
 </html>

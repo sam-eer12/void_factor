@@ -55,3 +55,7 @@ android/key.properties
 
 # Impeccable design-critique snapshots (local tool output, not source)
 .impeccable/
+
+# Firebase CLI deploy cache (hashes of the last uploaded hosting files).
+# Local bookkeeping, regenerated on every deploy.
+.firebase/
