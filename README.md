@@ -181,11 +181,32 @@ Five things stand between this repo and users:
    Links** below.
 5. **Publish the privacy policy.** Play requires it at a public URL, separate
    from the copy in the app. Hosting is deployed, so
-   `https://signinpractice-bfade.firebaseapp.com/privacy` is live and ready to
-   paste into the Play Console listing. After editing the policy, regenerate
-   and redeploy:
+   `https://void-factor.web.app/privacy` is live and ready to paste into the
+   Play Console listing. After editing the policy, regenerate and redeploy:
    `firebase deploy --only hosting --project signinpractice-bfade` from
    `firebase_hosting/`.
+
+### Two hosting sites, one project
+
+`firebase_hosting/firebase.json` declares `hosting` as an array of two sites,
+both serving the same `public/` directory:
+
+- **`void-factor.web.app`** — the name to hand to people. It is what Play reads
+  for the privacy policy and where `kAuthContinueUrl` lands the laptop half of a
+  cross-device verification.
+- **`signinpractice-bfade.web.app`** — the project's default site, kept because
+  the project ID is baked into `google-services.json` and
+  `GoogleService-Info.plist`.
+
+Because each entry names its `site` directly, no deploy targets and no
+`.firebaserc` are needed: one `firebase deploy --only hosting` publishes both.
+
+Renaming the hosting site did **not** rename the project. The emailed link's
+host comes from Auth's action URL, still
+`https://signinpractice-bfade.firebaseapp.com/__/auth/action`, which is why
+that is the only host the App Links filter and the iOS entitlement claim. Point
+those at `void-factor` only if you change the action URL to match, or links
+stop opening the app.
 
 ### Email links and App Links
 

@@ -33,11 +33,16 @@ const String _nameHintKey = 'name_for_signin';
 /// verification ended on Firebase's "Site Not Found" page, which reads as a
 /// failure even though the verification had just succeeded.
 ///
-/// The host must stay on the project's auth domain: that is the domain the
-/// Android intent filter and the iOS associated-domains entitlement claim, and
-/// the one Firebase authorizes for continue URLs without extra configuration.
-const String kAuthContinueUrl =
-    'https://signinpractice-bfade.firebaseapp.com/verified';
+/// Two constraints pin the host, and they pull in opposite directions. It has
+/// to be in Firebase Auth's authorized-domains list or `sendSignInLinkToEmail`
+/// rejects the continue URL outright; and it must *not* be a host the App Links
+/// filter claims, or the phone would swallow the page this exists to show. The
+/// hosting-only site satisfies both: it is authorized, and
+/// `AndroidManifest.xml` claims `/__/auth/action` on the auth domain alone.
+/// That auth domain is separate on purpose — the emailed link's host comes from
+/// the Auth action URL, which is still
+/// `signinpractice-bfade.firebaseapp.com`, not from this constant.
+const String kAuthContinueUrl = 'https://void-factor.web.app/verified';
 
 /// The one definition of how an auth email's link is built.
 ///
