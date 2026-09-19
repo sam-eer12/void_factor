@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.voidfactor.app",
+      "sha256_cert_fingerprints": [
+        "8B:70:CE:7A:70:EE:C7:AF:19:FF:6D:75:06:FA:C5:BD:B1:AC:9F:FF:F5:63:74:32:1F:97:9A:26:60:E6:A7:EE"
+      ]
+    }
+  }
+]

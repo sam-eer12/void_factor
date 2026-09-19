@@ -14,7 +14,8 @@ class VerifyLinkScreen extends ConsumerStatefulWidget {
   ConsumerState<VerifyLinkScreen> createState() => _VerifyLinkScreenState();
 }
 
-class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
+class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen>
+    with WidgetsBindingObserver {
   final _linkController = TextEditingController();
   late Timer _timer;
   int _secondsRemaining = 300; // 5 minutes
@@ -22,13 +23,32 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
 
   final _syncEngine = VerificationPollingEngine();
 
+  /// Whether this device holds a session that a remote confirmation can
+  /// release.
+  ///
+  /// True for the sign-up and unverified-login paths, where the account
+  /// already signed this device in — those are the flows where clicking the
+  /// link on a laptop still works, because the confirmation lands on the
+  /// server and this device notices. False on the passwordless path, where
+  /// there is no session yet and the one-time code has to be spent *here*.
+  bool get _hasPendingSession => FirebaseAuth.instance.currentUser != null;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _startTimer();
-    _syncEngine.startVerificationPolling(context, () {
-      Navigator.pushNamedAndRemoveUntil(context, '/onboarding', (route) => false);
-    });
+    _syncEngine.start(onVerified: _onVerified);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back from the mail app — or from a laptop, phone in hand — is the
+    // moment the answer is most likely to have changed. Waiting out the rest of
+    // the poll interval here is what made the app look dead on return.
+    if (state == AppLifecycleState.resumed) {
+      _syncEngine.checkNow();
+    }
   }
 
   void _startTimer() {
@@ -49,8 +69,121 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
+  /// The single exit taken by all three routes in — the poll, the resume check
+  /// and the pasted link — so none of them can leave the timers running or
+  /// land somewhere the others do not.
+  void _onVerified() {
+    if (_isVerified || !mounted) return;
+
+    _timer.cancel();
+    _syncEngine.dispose();
+    setState(() => _isVerified = true);
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      // Back to the gate rather than straight to '/onboarding': the gate is
+      // what knows whether this user still has onboarding to do or a dashboard
+      // to return to. Pushing onboarding directly sent people who had already
+      // finished it through it a second time.
+      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+    });
+  }
+
+  Future<void> _submitPastedLink() async {
+    final link = _linkController.text.trim();
+    if (link.isEmpty) {
+      _toast('Please paste the link from the email');
+      return;
+    }
+
+    final uri = Uri.tryParse(link);
+    final mode = uri?.queryParameters['mode'];
+    final oobCode = uri?.queryParameters['oobCode'];
+
+    // A verification code is applied against the session this device already
+    // holds; a sign-in code mints a new one. They are not interchangeable, and
+    // which arrived is written on the link.
+    if (mode == 'verifyEmail' && oobCode != null) {
+      try {
+        final auth = FirebaseAuth.instance;
+        await auth.applyActionCode(oobCode);
+        await auth.currentUser?.reload();
+        if (auth.currentUser?.emailVerified == true) {
+          _onVerified();
+          return;
+        }
+        if (!mounted) return;
+        _toast('Email confirmed, but this device has no session. Log in again.');
+      } catch (e) {
+        if (!mounted) return;
+        _toast('Verification failed: ${e.toString()}');
+      }
+      return;
+    }
+
+    final user =
+        await ref.read(authControllerProvider.notifier).signInWithLink(link);
+
+    if (!mounted) return;
+    if (user != null) {
+      _onVerified();
+      return;
+    }
+    _toast(ref.read(authControllerProvider).error ?? 'Authentication failed');
+  }
+
+  Future<void> _resend() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    // Same screen, two different emails. Sending a sign-in link to someone who
+    // is already signed in and merely unconfirmed would hand them a code that
+    // cannot confirm anything.
+    if (user != null) {
+      try {
+        await ref.read(authControllerProvider.notifier).sendVerificationEmail(user);
+      } catch (e) {
+        if (!mounted) return;
+        _toast('Could not resend: ${e.toString()}');
+        return;
+      }
+      if (!mounted) return;
+      _restartCountdown();
+      _toast('Confirmation link resent to ${user.email ?? 'your address'}.');
+      return;
+    }
+
+    final email = ref.read(authControllerProvider).email;
+    if (email.isEmpty) {
+      _toast('Could not resend. Go back and enter your email again.');
+      return;
+    }
+
+    final success = await ref
+        .read(authControllerProvider.notifier)
+        .sendPasswordlessLink(email, name: ref.read(authControllerProvider).name);
+
+    if (!mounted) return;
+    if (success) {
+      _restartCountdown();
+      _toast('Sign-in link resent. Open it on this device.');
+      return;
+    }
+    _toast(ref.read(authControllerProvider).error ?? 'Failed to resend link');
+  }
+
+  void _restartCountdown() {
+    _timer.cancel();
+    setState(() => _secondsRemaining = 300);
+    _startTimer();
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer.cancel();
     _syncEngine.dispose();
     _linkController.dispose();
@@ -60,7 +193,10 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
-    final isExpired = _secondsRemaining == 0;
+    // The countdown has run out — which says nothing about the link, whose own
+    // validity Firebase measures in hours. It is a prompt to resend, not a
+    // verdict, so it no longer blocks the button underneath it.
+    final countdownDone = _secondsRemaining == 0;
 
     return Scaffold(
       backgroundColor: MonolithTheme.background,
@@ -131,7 +267,7 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
                                 ),
                                 const SizedBox(height: 12),
                                 Text(
-                                  'Your identity has been authenticated. Redirecting you to the system configuration...',
+                                  'Your identity has been authenticated. Taking you in...',
                                   style: MonolithTheme.bodyMedium.copyWith(
                                     color: MonolithTheme.surfaceContainerHigh,
                                   ),
@@ -156,7 +292,9 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'We have dispatched a secure authentication link to your email.',
+                                  _hasPendingSession
+                                      ? 'We have dispatched a confirmation link to your email. Open it anywhere — on this phone or on a computer — and this screen will carry on by itself.'
+                                      : 'We have dispatched a sign-in link to your email. Open it on this device: the link signs in whichever device opens it, and it can only be used once.',
                                   style: MonolithTheme.bodyMedium.copyWith(
                                     color: MonolithTheme.surfaceContainerHigh,
                                   ),
@@ -172,10 +310,10 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
                             decoration: MonolithTheme.cardDecoration,
                             child: Row(
                               children: [
-                                isExpired
+                                countdownDone
                                     ? const Icon(
-                                        Icons.error_outline,
-                                        color: MonolithTheme.error,
+                                        Icons.mark_email_unread_outlined,
+                                        color: MonolithTheme.primary,
                                         size: 28,
                                       )
                                     : const SizedBox(
@@ -192,18 +330,18 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        isExpired
-                                            ? 'LINK EXPIRED'
+                                        countdownDone
+                                            ? 'STILL WAITING'
                                             : 'WAITING FOR CONFIRMATION...',
                                         style: MonolithTheme.labelMedium.copyWith(
-                                          color: isExpired ? MonolithTheme.error : MonolithTheme.primary,
+                                          color: MonolithTheme.primary,
                                         ),
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        isExpired
-                                            ? 'Please request a new access link.'
-                                            : 'Expires in: ${_formatTime(_secondsRemaining)}',
+                                        countdownDone
+                                            ? 'No email yet? Resend it below.'
+                                            : 'Checking for: ${_formatTime(_secondsRemaining)}',
                                         style: MonolithTheme.labelSmall.copyWith(
                                           color: MonolithTheme.outline,
                                         ),
@@ -238,121 +376,14 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
                           else
                             MonolithButton(
                               label: 'COMPLETE ACCESS',
-                              onPressed: isExpired
-                                  ? null
-                                  : () async {
-                                      final link = _linkController.text.trim();
-                                      if (link.isEmpty) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Please paste the email link to sign in')),
-                                        );
-                                        return;
-                                      }
-
-                                      // Check if it is a verification link (contains oobCode and mode=verifyEmail)
-                                      final uri = Uri.tryParse(link);
-                                      if (uri != null && uri.queryParameters['mode'] == 'verifyEmail' && uri.queryParameters['oobCode'] != null) {
-                                        try {
-                                          final auth = FirebaseAuth.instance;
-                                          await auth.applyActionCode(uri.queryParameters['oobCode']!);
-                                          final user = auth.currentUser;
-                                          if (user != null) {
-                                            await user.reload();
-                                          }
-                                          if (auth.currentUser?.emailVerified == true) {
-                                            setState(() {
-                                              _isVerified = true;
-                                            });
-                                            _timer.cancel();
-                                            _syncEngine.dispose();
-                                            if (!context.mounted) return;
-                                            Future.delayed(const Duration(seconds: 2), () {
-                                              if (context.mounted) {
-                                                Navigator.pushNamedAndRemoveUntil(
-                                                  context,
-                                                  '/onboarding',
-                                                  (route) => false,
-                                                );
-                                              }
-                                            });
-                                            return;
-                                          }
-                                        } catch (e) {
-                                          if (!context.mounted) return;
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(content: Text('Verification failed: ${e.toString()}')),
-                                          );
-                                          return;
-                                        }
-                                      }
-
-                                      final user = await ref
-                                          .read(authControllerProvider.notifier)
-                                          .signInWithLink(link);
-
-                                      if (!context.mounted) return;
-                                      if (user != null) {
-                                        setState(() {
-                                          _isVerified = true;
-                                        });
-
-                                        // Stop the countdown timer
-                                        _timer.cancel();
-                                        _syncEngine.dispose();
-
-                                        // Wait a short moment to let user read success message, then navigate to '/onboarding'
-                                        Future.delayed(const Duration(seconds: 2), () {
-                                          if (context.mounted) {
-                                            Navigator.pushNamedAndRemoveUntil(
-                                              context,
-                                              '/onboarding',
-                                              (route) => false,
-                                            );
-                                          }
-                                        });
-                                      } else {
-                                        final error = ref.read(authControllerProvider).error;
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text(error ?? 'Authentication failed')),
-                                        );
-                                      }
-                                    },
+                              onPressed: _submitPastedLink,
                             ),
                           const SizedBox(height: 24),
 
                           // ── Resend Link ──
                           Center(
                             child: GestureDetector(
-                              onTap: () async {
-                                final email = authState.email;
-                                if (email.isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Could not resend. Go back and enter your email again.')),
-                                  );
-                                  return;
-                                }
-
-                                final success = await ref
-                                    .read(authControllerProvider.notifier)
-                                    .sendPasswordlessLink(email, name: authState.name);
-
-                                if (!context.mounted) return;
-                                if (success) {
-                                  setState(() {
-                                    _secondsRemaining = 300;
-                                  });
-                                  _timer.cancel();
-                                  _startTimer();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Verification link resent successfully.')),
-                                  );
-                                } else {
-                                  final error = ref.read(authControllerProvider).error;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(error ?? 'Failed to resend link')),
-                                  );
-                                }
-                              },
+                              onTap: _resend,
                               child: Text(
                                 'RESEND LINK',
                                 style: MonolithTheme.labelMedium.copyWith(
@@ -378,29 +409,50 @@ class _VerifyLinkScreenState extends ConsumerState<VerifyLinkScreen> {
   }
 }
 
+/// Watches the server for a confirmation this device did not perform itself.
+///
+/// `emailVerified` is a property of the *account*, not of this session, so a
+/// link opened in a browser on another machine changes it here too — but only
+/// once the local user record is refetched. That refetch is the whole engine:
+/// [checkNow] is the single implementation, driven on a timer and also called
+/// directly when the app returns to the foreground.
 class VerificationPollingEngine {
   Timer? _pollingTimer;
+  VoidCallback? _onVerified;
+  bool _finished = false;
 
-  void startVerificationPolling(BuildContext context, VoidCallback onVerified) {
+  void start({required VoidCallback onVerified}) {
+    _onVerified = onVerified;
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        try {
-          await user.reload();
-          final updatedUser = FirebaseAuth.instance.currentUser;
-          if (updatedUser != null && updatedUser.emailVerified) {
-            timer.cancel();
-            onVerified();
-          }
-        } catch (_) {
-          // Ignore transient network errors during background polling
-        }
-      }
-    });
+    _pollingTimer =
+        Timer.periodic(const Duration(seconds: 3), (_) => checkNow());
+  }
+
+  Future<void> checkNow() async {
+    if (_finished) return;
+    final user = FirebaseAuth.instance.currentUser;
+    // No session to refresh — the passwordless path, where the code has to be
+    // spent on this device and nothing the server holds can release it.
+    if (user == null) return;
+
+    try {
+      await user.reload();
+    } catch (_) {
+      // Transient network failure. The next tick — or the next resume — asks
+      // again; treating it as "not verified" is already the right answer.
+      return;
+    }
+
+    if (FirebaseAuth.instance.currentUser?.emailVerified == true) {
+      _finished = true;
+      _pollingTimer?.cancel();
+      _onVerified?.call();
+    }
   }
 
   void dispose() {
+    _finished = true;
     _pollingTimer?.cancel();
+    _pollingTimer = null;
   }
 }

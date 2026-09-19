@@ -24,6 +24,36 @@ final authStateProvider = StreamProvider<User?>((ref) {
 const String _emailHintKey = 'email_for_signin';
 const String _nameHintKey = 'name_for_signin';
 
+/// Where a Firebase action link sends the browser once it has applied the code.
+///
+/// This is only ever reached by a *browser* — a link opened on the phone is
+/// caught by the App Links filter and handled in-app instead — so it points at
+/// a page whose whole content is "go back to your phone". It used to point at
+/// `/onboarding`, a path that is not hosted: the laptop half of a cross-device
+/// verification ended on Firebase's "Site Not Found" page, which reads as a
+/// failure even though the verification had just succeeded.
+///
+/// The host must stay on the project's auth domain: that is the domain the
+/// Android intent filter and the iOS associated-domains entitlement claim, and
+/// the one Firebase authorizes for continue URLs without extra configuration.
+const String kAuthContinueUrl =
+    'https://signinpractice-bfade.firebaseapp.com/verified';
+
+/// The one definition of how an auth email's link is built.
+///
+/// Sign-up verification, resends and passwordless sign-in all have to agree on
+/// the continue URL and the package identifiers — three copies of this literal
+/// is how one of them drifts and only one of the flows ends up handled by the
+/// app.
+ActionCodeSettings _authActionCodeSettings() => ActionCodeSettings(
+      url: kAuthContinueUrl,
+      handleCodeInApp: true,
+      androidPackageName: 'com.voidfactor.app',
+      androidInstallApp: true,
+      androidMinimumVersion: '1',
+      iOSBundleId: 'com.voidfactor.app',
+    );
+
 class SignupState {
   final String name;
   final String email;
@@ -64,45 +94,166 @@ class AuthController extends Notifier<SignupState> {
     return SignupState();
   }
 
+  /// Remembers which address a link was sent to, so the paste-the-link
+  /// fallback and the resend button can both work without asking again.
+  Future<void> _rememberSignInHints(String email, String? name) async {
+    const secureStorage = FlutterSecureStorage();
+    await secureStorage.write(key: _emailHintKey, value: email);
+    if (name != null && name.isNotEmpty) {
+      await secureStorage.write(key: _nameHintKey, value: name);
+    } else {
+      await secureStorage.delete(key: _nameHintKey);
+    }
+  }
+
   // Send Email Verification (for email/password or manually verified accounts)
   Future<void> sendVerificationEmail(User user) async {
-    final actionCodeSettings = ActionCodeSettings(
-      url: 'https://signinpractice-bfade.firebaseapp.com/onboarding',
-      handleCodeInApp: true,
-      androidPackageName: 'com.voidfactor.app',
-      androidInstallApp: true,
-      androidMinimumVersion: '1',
-      iOSBundleId: 'com.voidfactor.app',
-    );
-    await user.sendEmailVerification(actionCodeSettings);
+    try {
+      await user.sendEmailVerification(_authActionCodeSettings());
+    } catch (_) {
+      // A rejected ActionCodeSettings must not cost the user their only way
+      // in: the default link still verifies, it just lands on Firebase's own
+      // page instead of ours.
+      await user.sendEmailVerification();
+    }
+  }
+
+  /// Creates the account, names it, and sends the verification link.
+  ///
+  /// Deliberately password-based rather than a passwordless link: the account
+  /// creation signs this device in immediately, which is the *only* reason the
+  /// cross-device case works at all. With a live `currentUser` here, verifying
+  /// on a laptop flips `emailVerified` server-side and this device's polling
+  /// picks it up. A passwordless link cannot do that — the one-time code is
+  /// burned by whichever device opens it, and this one never sees a session.
+  Future<User?> signUpWithPassword({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      final user = credential.user;
+      if (user == null) {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'Account creation did not return a user.',
+        );
+        return null;
+      }
+
+      if (name.isNotEmpty) {
+        await user.updateDisplayName(name);
+      }
+
+      // Sending the link is a separate failure from creating the account: the
+      // account exists either way, and reporting a creation that happened as a
+      // failure would send the user back to sign up into a taken address.
+      try {
+        await sendVerificationEmail(user);
+      } catch (_) {
+        // Swallowed on purpose — the verify screen's RESEND covers it.
+      }
+
+      await _rememberSignInHints(email, name);
+      state = SignupState(email: email, name: name, isLinkSent: true);
+      return user;
+    } on FirebaseAuthException catch (e) {
+      state = state.copyWith(isLoading: false, error: _signUpMessage(e));
+      return null;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'An unexpected error occurred: ${e.toString()}',
+      );
+      return null;
+    }
+  }
+
+  /// Signs in with the password chosen at sign-up.
+  ///
+  /// The direct path: no email round-trip, so it cannot be broken by a link
+  /// opened on the wrong device. The email link remains available as the
+  /// recovery route for a forgotten password.
+  Future<User?> signInWithPassword(String email, String password) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      final user = credential.user;
+      // No secure-storage hint written here on purpose. That key exists to tell
+      // `signInWithLink` which address a *link* was sent to; a password sign-in
+      // sends none, and leaving one behind would have a later pasted link
+      // completed against whoever last logged in on this device.
+      state = SignupState(email: email, name: user?.displayName ?? '');
+      return user;
+    } on FirebaseAuthException catch (e) {
+      state = state.copyWith(isLoading: false, error: _signInMessage(e));
+      return null;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'An unexpected error occurred: ${e.toString()}',
+      );
+      return null;
+    }
+  }
+
+  /// Firebase's own messages name internal concepts ("INVALID_LOGIN_
+  /// CREDENTIALS"); these say what the person can do about it.
+  String _signInMessage(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'invalid-credential':
+      case 'wrong-password':
+      case 'user-not-found':
+        // Firebase collapses "no such account" into "invalid credential" by
+        // default so an attacker cannot enumerate addresses. Saying which one
+        // was wrong would undo that, so the message stays deliberately vague.
+        return 'Email or password is incorrect.';
+      case 'invalid-email':
+        return 'That email address is malformed.';
+      case 'user-disabled':
+        return 'This account has been disabled.';
+      case 'too-many-requests':
+        return 'Too many attempts. Wait a moment and try again.';
+      case 'network-request-failed':
+        return 'No connection. Check your network and try again.';
+      default:
+        return e.message ?? 'Sign-in failed.';
+    }
+  }
+
+  String _signUpMessage(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'email-already-in-use':
+        return 'This email is already registered. Please log in.';
+      case 'weak-password':
+        return 'Password is too weak — use at least six characters.';
+      case 'invalid-email':
+        return 'That email address is malformed.';
+      case 'network-request-failed':
+        return 'No connection. Check your network and try again.';
+      default:
+        return e.message ?? 'Account creation failed.';
+    }
   }
 
   // Send Passwordless Email Sign-in/Sign-up Link
   Future<bool> sendPasswordlessLink(String email, {String? name}) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final actionCodeSettings = ActionCodeSettings(
-        url: 'https://signinpractice-bfade.firebaseapp.com/onboarding',
-        handleCodeInApp: true,
-        androidPackageName: 'com.voidfactor.app',
-        androidMinimumVersion: '1',
-        androidInstallApp: true,
-        iOSBundleId: 'com.voidfactor.app',
-      );
-
       await _auth.sendSignInLinkToEmail(
         email: email,
-        actionCodeSettings: actionCodeSettings,
+        actionCodeSettings: _authActionCodeSettings(),
       );
 
-      // Save email and optional name to secure storage
-      const secureStorage = FlutterSecureStorage();
-      await secureStorage.write(key: _emailHintKey, value: email);
-      if (name != null && name.isNotEmpty) {
-        await secureStorage.write(key: _nameHintKey, value: name);
-      } else {
-        await secureStorage.delete(key: _nameHintKey);
-      }
+      await _rememberSignInHints(email, name);
 
       state = SignupState(
         email: email,

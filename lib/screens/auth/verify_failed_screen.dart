@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/monolith_theme.dart';
@@ -7,10 +8,36 @@ import '../../features/auth/auth_provider.dart';
 class VerifyFailedScreen extends ConsumerWidget {
   const VerifyFailedScreen({super.key});
 
+  /// Resends whichever email this user is actually waiting on.
+  ///
+  /// A live session means the account exists and only wants confirming; no
+  /// session means there is nothing to confirm against and the address needs a
+  /// sign-in link instead. Sending the wrong one hands back a code that cannot
+  /// complete the flow the user is in.
+  Future<bool> _resend(WidgetRef ref) async {
+    final controller = ref.read(authControllerProvider.notifier);
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user != null) {
+      try {
+        await controller.sendVerificationEmail(user);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    final state = ref.read(authControllerProvider);
+    if (state.email.isEmpty) return false;
+    return controller.sendPasswordlessLink(state.email, name: state.name);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider);
-    final email = authState.email;
+    // Either half is enough to resend: the signed-in address when the account
+    // exists, the remembered one when it does not.
+    final email = FirebaseAuth.instance.currentUser?.email ?? authState.email;
 
     return Scaffold(
       backgroundColor: MonolithTheme.background,
@@ -99,9 +126,7 @@ class VerifyFailedScreen extends ConsumerWidget {
                   MonolithButton(
                     label: 'RESEND LINK',
                     onPressed: () async {
-                      final success = await ref
-                          .read(authControllerProvider.notifier)
-                          .sendPasswordlessLink(email, name: authState.name);
+                      final success = await _resend(ref);
 
                       if (!context.mounted) return;
                       if (success) {

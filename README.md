@@ -176,11 +176,45 @@ Five things stand between this repo and users:
    Without the flag every scan fails with "CAN'T REACH ANALYSIS SERVICE".
 4. **Create an upload keystore.** `android/key.properties.example`. Until it
    exists, release builds fall back to debug signing and cannot be published.
+   When you make one, its SHA-256 has to be added in two places or email links
+   stop opening the app for every release build — see **Email links and App
+   Links** below.
 5. **Publish the privacy policy.** Play requires it at a public URL, separate
-   from the copy in the app:
+   from the copy in the app. Hosting is deployed, so
+   `https://signinpractice-bfade.firebaseapp.com/privacy` is live and ready to
+   paste into the Play Console listing. After editing the policy, regenerate
+   and redeploy:
    `firebase deploy --only hosting --project signinpractice-bfade` from
-   `firebase_hosting/`, then paste `https://<site>/privacy` into the Play
-   Console listing.
+   `firebase_hosting/`.
+
+### Email links and App Links
+
+A verification link opens the app instead of a browser only if Android can
+verify the app owns the domain. That takes two matching facts, and a release
+keystore changes both:
+
+- `firebase_hosting/public/.well-known/assetlinks.json` lists the signing
+  certificate's SHA-256. It currently lists the **debug** certificate, which is
+  what release builds are also signed with until `key.properties` exists.
+- The same SHA-256 is registered on the Firebase Android app
+  (`firebase apps:android:sha:create <appId> <sha256>`), which is what Google
+  Sign-In checks.
+
+Add the upload keystore's SHA-256 to the JSON array (keep the debug one so
+local builds keep working), redeploy hosting, and register it with
+`firebase apps:android:sha:create 1:286425881714:android:eeab1979ef36ba089cb6eb
+<sha256>`. Verify with:
+
+```sh
+curl "https://digitalassetlinks.googleapis.com/v1/statements:list?\
+source.web.site=https://signinpractice-bfade.firebaseapp.com&\
+relation=delegate_permission/common.handle_all_urls"
+```
+
+iOS Universal Links are **not** set up: the app has no Apple Team ID, so the
+`apple-app-site-association` Firebase serves is empty. On iOS the links open in
+Safari and finish on the hosted page; the in-app paste field and password login
+both still work.
 
 Optional: set `SUPPORT_UPI_VPA` and `SUPPORT_BMC_USERNAME` at build time to
 activate the support screen. Until then it says support is not set up, which is
