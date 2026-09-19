@@ -47,6 +47,7 @@ void main() {
     WidgetTester tester, {
     String initialName = '',
     Nutrients initialNutrients = const Nutrients(),
+    double initialQuantity = 1.0,
     FoodSource source = FoodSource.manual,
   }) async {
     // The default 800x600 test surface is shorter than the form, which puts SAVE
@@ -71,6 +72,7 @@ void main() {
                   builder: (_) => FoodEntryFormScreen(
                     initialName: initialName,
                     initialNutrients: initialNutrients,
+                    initialQuantity: initialQuantity,
                     source: source,
                   ),
                 ),
@@ -430,6 +432,81 @@ void main() {
       await pumpForm(tester);
 
       expect(find.text('ADD ENTRY'), findsOneWidget);
+    });
+  });
+  group('the quantity it opens on', () {
+    testWidgets('starts at one serving when nobody said otherwise',
+        (tester) async {
+      await pumpForm(tester);
+
+      expect(find.text('1.0x'), findsOneWidget);
+    });
+
+    testWidgets('starts on the count vision read off the plate',
+        (tester) async {
+      await pumpForm(
+        tester,
+        initialName: 'Samosa',
+        initialNutrients: const Nutrients(calories: 262),
+        initialQuantity: 3,
+        source: FoodSource.vision,
+      );
+
+      expect(find.text('3.0x'), findsOneWidget);
+    });
+
+    testWidgets('totals the plate, not the piece', (tester) async {
+      await pumpForm(
+        tester,
+        initialName: 'Samosa',
+        initialNutrients: const Nutrients(calories: 262),
+        initialQuantity: 3,
+        source: FoodSource.vision,
+      );
+
+      // The figure the user is actually deciding about. Opening on 1.0x would
+      // under-report a plate of three by two thirds before they touched it.
+      expect(find.text('786 KCAL'), findsOneWidget);
+    });
+
+    testWidgets('saves the count beside the per-serving figures',
+        (tester) async {
+      await pumpForm(
+        tester,
+        initialName: 'Samosa',
+        initialNutrients: const Nutrients(calories: 262),
+        initialQuantity: 3,
+        source: FoodSource.vision,
+      );
+      await tapSave(tester);
+
+      final saved = store.saved.single;
+      expect(saved.quantity, 3);
+      // Never folded together: an edit to the count has to stay able to
+      // recompute the total.
+      expect(saved.nutrients.calories, 262);
+      expect(saved.totalCalories, 786);
+    });
+
+    testWidgets('still lets the user correct what the model counted',
+        (tester) async {
+      await pumpForm(
+        tester,
+        initialNutrients: const Nutrients(calories: 262),
+        initialQuantity: 3,
+        source: FoodSource.vision,
+      );
+
+      await tester.tap(find.byIcon(Icons.remove));
+      await tester.pumpAndSettle();
+
+      expect(find.text('2.5x'), findsOneWidget);
+    });
+
+    testWidgets('clamps a count outside the stepper\'s range', (tester) async {
+      await pumpForm(tester, initialQuantity: 999);
+
+      expect(find.text('20.0x'), findsOneWidget);
     });
   });
 }

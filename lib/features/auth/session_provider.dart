@@ -11,9 +11,17 @@ import '../profile/profile_repository.dart';
 import '../projection/hf_token_store.dart';
 
 class SessionService {
-  SessionService(this._profileRepository);
+  SessionService(this._profileRepository, [ApiCredentialStore? credentials])
+      : _credentials = credentials ?? SecureApiCredentialStore();
 
   final ProfileRepository _profileRepository;
+
+  /// Reached through the store rather than by deleting its keys here. There is
+  /// one key per provider now plus the pre-multi-key `api_key` some devices are
+  /// still carrying, and a teardown that has to keep its own list of those is a
+  /// teardown that will one day miss one — leaving the next user of a shared
+  /// device holding somebody else's credential.
+  final ApiCredentialStore _credentials;
 
   final _secureStorage = const FlutterSecureStorage();
   final _auth = FirebaseAuth.instance;
@@ -40,8 +48,7 @@ class SessionService {
     await _secureStorage.delete(key: _sessionIdKey);
     await _secureStorage.delete(key: _lastActivityKey);
     await _secureStorage.delete(key: _profileCompletedKey);
-    await _secureStorage.delete(key: ApiCredentialStore.keyKey);
-    await _secureStorage.delete(key: ApiCredentialStore.providerKey);
+    await _credentials.deleteAll();
     // The model token is this user's HuggingFace credential, so it leaves with
     // them — on a shared device the next user must not be able to download
     // against it. The downloaded model file itself deliberately stays: it holds
@@ -200,9 +207,11 @@ class SessionService {
     await _profileRepository.save(profile);
 
     // 3. API credentials remain local-only (never sent to Firestore).
-    await _secureStorage.write(key: ApiCredentialStore.keyKey, value: apiKey);
-    await _secureStorage.write(
-        key: ApiCredentialStore.providerKey, value: apiProvider);
+    // Through the store, so the key lands in its provider's own slot and that
+    // provider becomes the one scans start with. Onboarding collects one key;
+    // Settings is where the other two get added behind it as fallbacks.
+    await _credentials
+        .write(ApiCredentials(provider: apiProvider, key: apiKey));
 
     // 4. Session bookkeeping.
     await _secureStorage.write(key: _sessionIdKey, value: newSessionId);
@@ -212,7 +221,10 @@ class SessionService {
 }
 
 final sessionServiceProvider = Provider<SessionService>((ref) {
-  return SessionService(ref.watch(profileRepositoryProvider));
+  return SessionService(
+    ref.watch(profileRepositoryProvider),
+    ref.watch(apiCredentialStoreProvider),
+  );
 });
 
 enum AuthFlowState { loading, login, onboarding, dashboard }
@@ -251,8 +263,21 @@ class AuthFlowNotifier extends Notifier<AuthFlowState> {
       return;
     }
 
+    final previous = state;
     final token = ++_checkToken;
-    state = AuthFlowState.loading;
+    // The spinner is for a flow that has nothing to show yet. Once the user is
+    // on a real destination this check runs *over* it: AuthGate re-checks on
+    // every app resume, and returning from the camera or the photo picker is an
+    // app resume. Dropping to `loading` there unmounts the whole shell for the
+    // length of a Firestore read — which discards the screen the user was on
+    // (a scan in flight loses the context it needs to show its result) and
+    // rebuilds MonolithShell at tab 0, dumping them on the dashboard. So a
+    // settled destination stays up until the check has an answer; only a
+    // genuine change of answer moves the screen.
+    if (previous != AuthFlowState.dashboard &&
+        previous != AuthFlowState.onboarding) {
+      state = AuthFlowState.loading;
+    }
     try {
       final service = ref.read(sessionServiceProvider);
       final result = await service.manageSessionAndFlow();
@@ -260,8 +285,12 @@ class AuthFlowNotifier extends Notifier<AuthFlowState> {
       if (token != _checkToken) return;
       if (result == 'dashboard') {
         // Refresh the cached profile that Settings reads, now that the session
-        // sync has reconciled it to secure storage / Firestore.
-        ref.invalidate(profileProvider);
+        // sync has reconciled it to secure storage / Firestore. On arrival
+        // only: invalidating on a resume that changed nothing would blank every
+        // watcher for a frame, including a half-filled Edit Profile form.
+        if (previous != AuthFlowState.dashboard) {
+          ref.invalidate(profileProvider);
+        }
         state = AuthFlowState.dashboard;
       } else if (result == 'onboarding') {
         state = AuthFlowState.onboarding;

@@ -13,16 +13,26 @@ import 'package:void_factor/features/food_log/food_log_store.dart';
 import 'package:void_factor/models/food_entry.dart';
 
 class FakeCredentialStore implements ApiCredentialStore {
-  FakeCredentialStore([this.credentials]);
-  ApiCredentials? credentials;
+  /// Takes the single credential these tests care about; the store's real
+  /// contract is an ordered list, which the client's own suite exercises.
+  FakeCredentialStore([ApiCredentials? credentials])
+      : credentials = [?credentials];
+
+  List<ApiCredentials> credentials;
+
   @override
-  Future<ApiCredentials?> read() async => credentials;
+  Future<List<ApiCredentials>> readAll() async => credentials;
   @override
-  Future<String?> readProvider() async => credentials?.provider;
+  Future<void> write(ApiCredentials c) async => credentials = [c];
   @override
-  Future<void> write(ApiCredentials c) async => credentials = c;
+  Future<void> setDefaultProvider(String provider) async {}
   @override
-  Future<void> delete() async => credentials = null;
+  Future<void> deleteProvider(String provider) async => credentials = [
+        for (final c in credentials)
+          if (c.provider != provider) c,
+      ];
+  @override
+  Future<void> deleteAll() async => credentials = [];
 }
 
 /// Fake picker + compressor. Records what it was asked for and whether the
@@ -236,8 +246,8 @@ void main() {
           .capture(ImageSource.camera);
 
       expect(result, isNotNull);
-      expect(result!.$1, 'Grilled Chicken');
-      expect(result.$2.calories, 450);
+      expect(result!.name, 'Grilled Chicken');
+      expect(result.nutrients.calories, 450);
     });
 
     test('passes the requested source through to the picker', () async {

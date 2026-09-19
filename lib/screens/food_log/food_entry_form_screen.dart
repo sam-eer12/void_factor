@@ -13,9 +13,10 @@ import '../../widgets/monolith_text_field.dart';
 
 /// The one form both logging paths end at.
 ///
-/// Vision arrives with [initialName] and [initialNutrients] filled from the
-/// model; manual arrives empty. Everything the model proposed is editable,
-/// because a photo estimate the user cannot correct is worse than no estimate.
+/// Vision arrives with [initialName], [initialNutrients] and [initialQuantity]
+/// filled from the model; manual arrives empty. Everything the model proposed
+/// is editable, because a photo estimate the user cannot correct is worse than
+/// no estimate.
 ///
 /// Pushed as a plain [MaterialPageRoute] rather than a named route: the
 /// arguments are typed, and a named route would flatten them into
@@ -26,6 +27,12 @@ class FoodEntryFormScreen extends ConsumerStatefulWidget {
   /// Per **one** serving. The quantity multiplier is applied for display and
   /// stored beside these figures, never folded into them.
   final Nutrients initialNutrients;
+
+  /// How many servings to start the stepper on.
+  ///
+  /// Vision passes the count the model read off the plate; manual entry starts
+  /// at one. Only a starting point — the stepper owns it from the first tap.
+  final double initialQuantity;
 
   final FoodSource source;
 
@@ -41,6 +48,7 @@ class FoodEntryFormScreen extends ConsumerStatefulWidget {
     super.key,
     this.initialName = '',
     this.initialNutrients = const Nutrients(),
+    this.initialQuantity = 1.0,
     required this.source,
     this.editing,
   });
@@ -72,7 +80,10 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
   final _carbsController = TextEditingController();
   final _fatsController = TextEditingController();
 
-  late double _quantity = widget.editing?.quantity ?? 1.0;
+  // An edit already has a quantity the user chose, and it outranks anything a
+  // caller seeded.
+  late double _quantity =
+      widget.editing?.quantity ?? FoodEntry.clampQuantity(widget.initialQuantity);
   bool _isSaving = false;
 
   @override

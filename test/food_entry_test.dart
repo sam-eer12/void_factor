@@ -414,4 +414,25 @@ void main() {
       expect(FoodEntry.maxQuantity, 20);
     });
   });
+  group('FoodEntry.snapQuantity', () {
+    test('leaves a count the stepper could have produced alone', () {
+      expect(FoodEntry.snapQuantity(3), 3);
+      expect(FoodEntry.snapQuantity(2.5), 2.5);
+    });
+
+    test('rounds a fractional count onto the half-step grid', () {
+      // Vision is the only source of a number the stepper did not produce, and
+      // a 2.7 would put every tap after it off the grid: 3.2x, 3.7x.
+      expect(FoodEntry.snapQuantity(2.7), 2.5);
+      expect(FoodEntry.snapQuantity(2.8), 3.0);
+      expect(FoodEntry.snapQuantity(1.24), 1.0);
+    });
+
+    test('keeps the count inside the stepper\'s bounds', () {
+      expect(FoodEntry.snapQuantity(0.1), FoodEntry.minQuantity);
+      expect(FoodEntry.snapQuantity(0), FoodEntry.minQuantity);
+      expect(FoodEntry.snapQuantity(-4), FoodEntry.minQuantity);
+      expect(FoodEntry.snapQuantity(500), FoodEntry.maxQuantity);
+    });
+  });
 }

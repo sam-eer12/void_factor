@@ -46,7 +46,8 @@ ENCODE = os.getenv("LOADTEST_ENCODE", "1") == "1"
 # Shaped like a real Gemini answer, fences included, so the parse path that runs
 # in production runs here too.
 _RAW_ANSWER = (
-    '```json\n{"name": "grilled chicken salad", "nutrients": {"calories": 412, '
+    '```json\n{"name": "grilled chicken salad", "quantity": 1, '
+    '"nutrients": {"calories": 412, '
     '"protein_g": 38.5, "carbs_g": 14.2, "fats_g": 22.1}}\n```'
 )
 

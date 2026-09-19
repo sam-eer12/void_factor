@@ -147,6 +147,16 @@ class FoodEntry {
   static double clampQuantity(double value) =>
       value.clamp(minQuantity, maxQuantity).toDouble();
 
+  /// Puts an arbitrary quantity onto the stepper's own half-step grid, then
+  /// inside its bounds.
+  ///
+  /// Vision is the only source of a number the stepper did not produce: the
+  /// model reports how many pieces it counted, and a 2.7 would leave every tap
+  /// after it off the grid — 3.2x, 3.7x — for a figure that was an estimate to
+  /// begin with.
+  static double snapQuantity(double value) =>
+      clampQuantity((value * 2).roundToDouble() / 2);
+
   // ── Totals: per-serving nutrients scaled by quantity ──
   double get totalCalories => nutrients.calories * quantity;
   double get totalProteinG => nutrients.proteinG * quantity;

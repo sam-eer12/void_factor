@@ -18,7 +18,7 @@ import 'package:void_factor/screens/vision/ai_vision_screen.dart';
 class FakeVisionController extends VisionAnalysisController {
   FakeVisionController({this.result, this.failure});
 
-  (String, Nutrients)? result;
+  FoodAnalysis? result;
   Object? failure;
 
   /// Every source the screen asked for, in order.
@@ -28,10 +28,10 @@ class FakeVisionController extends VisionAnalysisController {
   Completer<void>? gate;
 
   @override
-  Future<(String, Nutrients)?> build() async => null;
+  Future<FoodAnalysis?> build() async => null;
 
   @override
-  Future<(String, Nutrients)?> capture(ImageSource source) async {
+  Future<FoodAnalysis?> capture(ImageSource source) async {
     requested.add(source);
     state = const AsyncLoading();
     if (gate != null) await gate!.future;
@@ -45,6 +45,15 @@ class FakeVisionController extends VisionAnalysisController {
     return result;
   }
 }
+
+/// One model answer: a name, per-serving figures, and how many of that serving
+/// were on the plate.
+FoodAnalysis analysis(
+  String name,
+  Nutrients nutrients, {
+  double quantity = 1,
+}) =>
+    (name: name, nutrients: nutrients, quantity: quantity);
 
 class FakeRecentFoodLog extends RecentFoodLog {
   FakeRecentFoodLog(this.entries);
@@ -90,6 +99,38 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Pumps the screen under a route child that can be swapped out and back.
+  ///
+  /// [visible] stands in for AuthGate: while the session re-check is in flight
+  /// it renders a spinner instead of the shell, which unmounts every screen
+  /// inside it. The Navigator above stays put throughout, exactly as it does in
+  /// the app.
+  Future<void> pumpThroughResume(
+    WidgetTester tester, {
+    required FakeVisionController vision,
+    required ValueNotifier<bool> visible,
+  }) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        visionAnalysisProvider.overrideWith(() => vision),
+        recentFoodLogProvider.overrideWith(() => FakeRecentFoodLog(const [])),
+      ],
+      child: MaterialApp(
+        home: ValueListenableBuilder<bool>(
+          valueListenable: visible,
+          builder: (context, shown, _) => shown
+              ? const AiVisionScreen()
+              : const Scaffold(body: Center(child: CircularProgressIndicator())),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+  }
+
   group('capturing', () {
     testWidgets('CAPTURE asks for the camera', (tester) async {
       final vision = FakeVisionController();
@@ -114,7 +155,7 @@ void main() {
     testWidgets('says it is working while the analysis is in flight',
         (tester) async {
       final vision = FakeVisionController(
-        result: ('Toast', const Nutrients(calories: 200)),
+        result: analysis('Toast', const Nutrients(calories: 200)),
       )..gate = Completer<void>();
       await pumpScreen(tester, vision: vision);
 
@@ -133,7 +174,7 @@ void main() {
     testWidgets('will not fire a second scan while one is running',
         (tester) async {
       final vision = FakeVisionController(
-        result: ('Toast', const Nutrients(calories: 200)),
+        result: analysis('Toast', const Nutrients(calories: 200)),
       )..gate = Completer<void>();
       await pumpScreen(tester, vision: vision);
 
@@ -155,7 +196,7 @@ void main() {
     testWidgets('opens the form prefilled with what the model read',
         (tester) async {
       final vision = FakeVisionController(
-        result: (
+        result: analysis(
           'Grilled Chicken Salad',
           const Nutrients(calories: 450, proteinG: 42),
         ),
@@ -199,6 +240,72 @@ void main() {
       expect(find.text('CONFIRM ENTRY'), findsNothing);
     });
 
+    testWidgets('opens the form on the servings the model counted',
+        (tester) async {
+      final vision = FakeVisionController(
+        result: analysis(
+          'Samosa',
+          const Nutrients(calories: 262),
+          quantity: 3,
+        ),
+      );
+      await pumpScreen(tester, vision: vision);
+
+      await tester.tap(find.text('CAPTURE'));
+      await tester.pumpAndSettle();
+
+      // The figures are per piece, so a plate of three opened at 1.0x would
+      // log a third of what was eaten.
+      expect(find.text('3.0x'), findsOneWidget);
+      expect(find.text('262'), findsOneWidget);
+      expect(find.text('786 KCAL'), findsOneWidget);
+    });
+
+    testWidgets('opens on a single serving when that is all there was',
+        (tester) async {
+      final vision = FakeVisionController(
+        result: analysis('Rice Bowl', const Nutrients(calories: 520)),
+      );
+      await pumpScreen(tester, vision: vision);
+
+      await tester.tap(find.text('CAPTURE'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1.0x'), findsOneWidget);
+    });
+
+    testWidgets('still opens the form when the app resumed mid-scan',
+        (tester) async {
+      final visible = ValueNotifier<bool>(true);
+      addTearDown(visible.dispose);
+      final vision = FakeVisionController(
+        result: analysis('Rice Bowl', const Nutrients(calories: 520)),
+      )..gate = Completer<void>();
+      await pumpThroughResume(tester, vision: vision, visible: visible);
+
+      await tester.tap(find.text('CAPTURE'));
+      await tester.pump();
+
+      // The picker backgrounds the app, so returning from it is an app resume —
+      // and AuthGate re-checks the session on resume, swapping the whole shell
+      // out for a spinner and back in. The screen that started this scan is
+      // gone by the time the answer lands.
+      visible.value = false;
+      await tester.pump();
+      visible.value = true;
+      await tester.pump();
+
+      vision.gate!.complete();
+      await tester.pumpAndSettle();
+
+      // The photograph was taken, uploaded and read, and one of the ten
+      // requests a minute was spent on it. Dropping the result because the
+      // widget that asked for it no longer exists is the failure this guards.
+      expect(find.text('CONFIRM ENTRY'), findsOneWidget);
+      expect(find.text('Rice Bowl'), findsOneWidget);
+      expect(find.text('520'), findsOneWidget);
+    });
+
     testWidgets('offers another go after a failure', (tester) async {
       final vision = FakeVisionController(
         failure: const FoodAnalysisException(FoodAnalysisClient.errorNoKey),
@@ -208,7 +315,7 @@ void main() {
       await tester.pumpAndSettle();
 
       vision.failure = null;
-      vision.result = ('Toast', const Nutrients(calories: 200));
+      vision.result = analysis('Toast', const Nutrients(calories: 200));
       await tester.tap(find.text('CAPTURE'));
       await tester.pumpAndSettle();
 

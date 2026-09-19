@@ -74,7 +74,17 @@ class AiVisionScreen extends ConsumerWidget {
     // flight would race to push a form on top of each other.
     if (ref.read(visionAnalysisProvider).isLoading) return;
 
-    final (String, Nutrients)? draft;
+    // Resolved before the picker hands off to the OS, and deliberately the root
+    // navigator rather than this screen's own context. Camera and gallery both
+    // background the app, and coming back is an app resume — so anything that
+    // rebuilds the tree above this widget lands squarely between the two awaits,
+    // leaving `context` unmounted by the time the analysis returns. A scan that
+    // has already been taken, uploaded and paid for would then be dropped in
+    // silence. The root navigator outlives the shell, so it can still show the
+    // form.
+    final navigator = Navigator.of(context, rootNavigator: true);
+
+    final FoodAnalysis? draft;
     try {
       draft =
           await ref.read(visionAnalysisProvider.notifier).capture(source);
@@ -86,15 +96,20 @@ class AiVisionScreen extends ConsumerWidget {
 
     // Null means the picker was dismissed: a deliberate choice, so nothing
     // happens and nothing is said.
-    if (draft == null || !context.mounted) return;
-    final (name, nutrients) = draft;
+    if (draft == null || !navigator.mounted) return;
+    // Unpacked before the builder closure, which a nullable local declared
+    // without an initializer cannot be promoted inside.
+    final (:name, :nutrients, :quantity) = draft;
 
-    await Navigator.push(
-      context,
+    await navigator.push(
       MaterialPageRoute(
         builder: (_) => FoodEntryFormScreen(
           initialName: name,
           initialNutrients: nutrients,
+          // What the model counted on the plate. The figures beside it are for
+          // one of those servings, so opening on 1 would under-report a plate
+          // of three by two thirds before the user had touched anything.
+          initialQuantity: quantity,
           source: FoodSource.vision,
         ),
       ),
@@ -134,7 +149,7 @@ class AiVisionScreen extends ConsumerWidget {
   ///
   /// A result is not shown here — it goes straight to the form, which is where
   /// the user can act on it.
-  Widget _panel(AsyncValue<(String, Nutrients)?> analysis) {
+  Widget _panel(AsyncValue<FoodAnalysis?> analysis) {
     return Container(
       width: double.infinity,
       height: 280,
