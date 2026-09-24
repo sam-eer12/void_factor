@@ -35,7 +35,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final budget = ref.watch(calorieBudgetProvider);
     // Only to tell "still loading" apart from "profile is missing metrics" when
     // the dial has no target to draw. The budget above carries the target itself.
-    final projection = ref.watch(projectionProvider).value;
+    // Selected down to the one line of copy, so a projection that recomputes —
+    // every logged meal and weigh-in — does not redraw the dashboard for it.
+    final targetHint = ref.watch(projectionProvider
+        .select((projection) => calorieTargetHintLabel(projection.value)));
     final healthStatus = ref.watch(healthStatusProvider);
     final connected = healthStatus == HealthConnectionStatus.enabled;
 
@@ -55,7 +58,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         },
         onHistoryTap: () {
           Navigator.pop(context);
-          Navigator.pushNamed(context, '/food-log');
+          Navigator.restorablePushNamed(context, '/food-log');
         },
         onLogoutTap: () => performLogout(context, ref),
       ),
@@ -119,6 +122,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             // ── Content ──
             Expanded(
               child: SingleChildScrollView(
+                restorationId: 'dashboard_scroll',
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -148,8 +152,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     // that used to live on a different screen.
                     CalorieDialCard(
                       budget: budget.value,
-                      targetHint: calorieTargetHintLabel(projection),
-                      onTap: () => Navigator.pushNamed(context, '/food-log'),
+                      targetHint: targetHint,
+                      onTap: () => Navigator.restorablePushNamed(context, '/food-log'),
                     ),
                     const SizedBox(height: 12),
 
@@ -221,7 +225,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         Expanded(
                           child: GestureDetector(
                             onTap: () =>
-                                Navigator.pushNamed(context, '/food-log'),
+                                Navigator.restorablePushNamed(context, '/food-log'),
                             child: MonolithStatCard(
                               title: 'Protein',
                               value: _macro(totals, (t) => t.proteinG),
@@ -255,7 +259,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           child: _buildQuickAction(
                             Icons.edit_note,
                             'LOG MEAL',
-                            () => Navigator.pushNamed(context, '/food-log'),
+                            () => Navigator.restorablePushNamed(context, '/food-log'),
                           ),
                         ),
                       ],
@@ -275,7 +279,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           child: _buildQuickAction(
                             Icons.favorite,
                             'DONATE',
-                            () => Navigator.pushNamed(context, '/donation'),
+                            () => Navigator.restorablePushNamed(context, '/donation'),
                           ),
                         ),
                       ],

@@ -60,7 +60,9 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
       key: _scaffoldKey,
       backgroundColor: MonolithTheme.background,
       drawer: MonolithDrawer(
-        userName: (ref.watch(authStateProvider).value?.displayName ?? 'USER')
+        userName: (ref.watch(authStateProvider
+                    .select((user) => user.value?.displayName)) ??
+                'USER')
             .toUpperCase(),
         onProfileTap: () {
           Navigator.pop(context);
@@ -76,7 +78,7 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
         },
         onHistoryTap: () {
           Navigator.pop(context);
-          Navigator.pushNamed(context, '/food-log');
+          Navigator.restorablePushNamed(context, '/food-log');
         },
         onLogoutTap: () => performLogout(context, ref),
       ),
@@ -87,6 +89,7 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
             _topBar(),
             Expanded(
               child: SingleChildScrollView(
+                restorationId: 'projections_scroll',
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -118,10 +121,21 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
                     const SizedBox(height: 16),
 
                     // ── On-device model offer ──
-                    ..._modelGate(),
+                    //
+                    // Each in its own Consumer: a download publishes a state
+                    // per percent and the model can take half a minute to word
+                    // the cards, and neither should redraw the chart above.
+                    Consumer(
+                      builder: (context, ref, _) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: _modelGate(ref),
+                      ),
+                    ),
 
                     // ── Recommendations ──
-                    _recommendationsCard(),
+                    Consumer(
+                      builder: (context, ref, _) => _recommendationsCard(ref),
+                    ),
                     const SizedBox(height: 20),
                   ],
                 ),
@@ -449,7 +463,7 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
   /// gigabyte would be charging for wording. Nothing is shown while the check is
   /// in flight, or if it fails — the recommendations card already states which
   /// voice wrote it, so silence here never leaves the user misinformed.
-  List<Widget> _modelGate() {
+  List<Widget> _modelGate(WidgetRef ref) {
     final model = ref.watch(gemmaModelProvider).value;
     if (model == null || model.isReady) return const [];
 
@@ -497,7 +511,7 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
               'TOKEN ONCE.',
           action: 'ADD TOKEN',
           onPressed: () =>
-              Navigator.pushNamed(context, AppRoutes.onDeviceModel),
+              Navigator.restorablePushNamed(context, AppRoutes.onDeviceModel),
         );
       case GemmaModelStage.notInstalled:
         return _modelGateOffer(
@@ -570,7 +584,7 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
   // Recommendations
   // ──────────────────────────────────────────────
 
-  Widget _recommendationsCard() {
+  Widget _recommendationsCard(WidgetRef ref) {
     final recommendations = ref.watch(recommendationsProvider);
     final caption = _recommendationsCaption(recommendations);
 

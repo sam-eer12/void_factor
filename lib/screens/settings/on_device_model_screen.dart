@@ -161,7 +161,6 @@ class _OnDeviceModelScreenState extends ConsumerState<OnDeviceModelScreen> {
   @override
   Widget build(BuildContext context) {
     final hasToken = ref.watch(huggingFaceTokenPresentProvider);
-    final model = ref.watch(gemmaModelProvider);
 
     return Scaffold(
       backgroundColor: MonolithTheme.background,
@@ -241,35 +240,13 @@ class _OnDeviceModelScreenState extends ConsumerState<OnDeviceModelScreen> {
                         color: MonolithTheme.primary,
                       ),
                       const SizedBox(height: 24),
-                      Text('MODEL', style: MonolithTheme.labelMedium),
-                      const SizedBox(height: 8),
-                      Text(
-                        _modelStatusLine(model),
-                        style: MonolithTheme.bodyMedium
-                            .copyWith(color: MonolithTheme.outline),
+                      // Scoped to the model's own section: a download publishes
+                      // a state per percent, and the token field above has no
+                      // reason to rebuild for any of them.
+                      Consumer(
+                        builder: (context, ref, _) =>
+                            _modelSection(ref.watch(gemmaModelProvider)),
                       ),
-                      if (model.value?.stage == GemmaModelStage.notInstalled) ...[
-                        const SizedBox(height: 16),
-                        MonolithButton(
-                          label: 'DOWNLOAD MODEL',
-                          onPressed: _isBusy ? null : _downloadModel,
-                        ),
-                      ],
-                      if (model.value?.stage == GemmaModelStage.failed) ...[
-                        const SizedBox(height: 16),
-                        MonolithButton(
-                          label: 'TRY AGAIN',
-                          onPressed: _isBusy ? null : _downloadModel,
-                        ),
-                      ],
-                      if (model.value?.isReady == true) ...[
-                        const SizedBox(height: 16),
-                        MonolithButton(
-                          label: 'DELETE MODEL',
-                          style: MonolithButtonStyle.tertiary,
-                          onPressed: _isBusy ? null : _removeModel,
-                        ),
-                      ],
                       const SizedBox(height: 24),
                     ],
                   ),
@@ -281,6 +258,41 @@ class _OnDeviceModelScreenState extends ConsumerState<OnDeviceModelScreen> {
       ),
     );
   }
+
+  Widget _modelSection(AsyncValue<GemmaModelState> model) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('MODEL', style: MonolithTheme.labelMedium),
+          const SizedBox(height: 8),
+          Text(
+            _modelStatusLine(model),
+            style: MonolithTheme.bodyMedium
+                .copyWith(color: MonolithTheme.outline),
+          ),
+          if (model.value?.stage == GemmaModelStage.notInstalled) ...[
+            const SizedBox(height: 16),
+            MonolithButton(
+              label: 'DOWNLOAD MODEL',
+              onPressed: _isBusy ? null : _downloadModel,
+            ),
+          ],
+          if (model.value?.stage == GemmaModelStage.failed) ...[
+            const SizedBox(height: 16),
+            MonolithButton(
+              label: 'TRY AGAIN',
+              onPressed: _isBusy ? null : _downloadModel,
+            ),
+          ],
+          if (model.value?.isReady == true) ...[
+            const SizedBox(height: 16),
+            MonolithButton(
+              label: 'DELETE MODEL',
+              style: MonolithButtonStyle.tertiary,
+              onPressed: _isBusy ? null : _removeModel,
+            ),
+          ],
+        ],
+      );
 
   Widget _topBar() => Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),

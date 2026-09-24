@@ -86,12 +86,16 @@ final recommendationsProvider =
 
   // Watched, not read: downloading the model must re-narrate the cards the user
   // is already looking at, or the download appears to have done nothing.
-  final modelState = await ref.watch(gemmaModelProvider.future);
+  //
+  // Only readiness, though. A download publishes a new state for every percent,
+  // and watching the whole state would re-rank and re-word the cards a hundred
+  // times on the way to the one change that matters.
+  final isReady =
+      await ref.watch(gemmaModelProvider.selectAsync((model) => model.isReady));
 
   final candidates = RecommendationEngine.top(projection);
-  final narrator = modelState.isReady
-      ? ref.read(recommendationNarratorProvider)
-      : const TemplateNarrator();
+  final narrator =
+      isReady ? ref.read(recommendationNarratorProvider) : const TemplateNarrator();
 
   return narrator.narrate(projection: projection, candidates: candidates);
 });
