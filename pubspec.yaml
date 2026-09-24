@@ -96,6 +96,10 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    # Space Grotesk, bundled so the first paint never waits on a font download.
+    # google_fonts finds these by file name. Only the weights the theme uses:
+    # w500, and w700 — which also serves w900, the family's heaviest being 700.
+    - assets/google_fonts/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
