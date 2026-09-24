@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Play shows this when it asks the user to confirm the on-demand engine
+         download. Must live in the base module; see android/gemma_engine. -->
+    <string name="gemma_engine_title">On-device model engine</string>
+</resources>

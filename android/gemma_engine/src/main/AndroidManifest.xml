@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:dist="http://schemas.android.com/apk/distribution">
+
+    <!-- On demand: installed when the user downloads the on-device model, never
+         at app install. Fused into universal APKs, so a build installed without
+         Play (bundletool's universal mode, a sideload) still has the engine. -->
+    <dist:module
+        dist:instant="false"
+        dist:title="@string/gemma_engine_title">
+        <dist:delivery>
+            <dist:on-demand />
+        </dist:delivery>
+        <dist:fusing dist:include="true" />
+    </dist:module>
+
+    <!-- Native libraries only. -->
+    <application android:hasCode="false" />
+</manifest>

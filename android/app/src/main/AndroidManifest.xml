@@ -19,8 +19,15 @@
     <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED"/>
     <application
         android:label="Void_Factor"
-        android:name="${applicationName}"
+        android:name=".VoidFactorApplication"
         android:icon="@mipmap/launcher_icon">
+        <!-- The GPU backend runs on OpenCL, a vendor library an app targeting
+             Android 12+ cannot load unless it names it here. Not required:
+             without it the engine falls back to the CPU, as it does today. The
+             -car and -pixel names are where some vendors ship it. -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false"/>
+        <uses-native-library android:name="libOpenCL-car.so" android:required="false"/>
+        <uses-native-library android:name="libOpenCL-pixel.so" android:required="false"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"

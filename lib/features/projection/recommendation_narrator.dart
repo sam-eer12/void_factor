@@ -247,8 +247,9 @@ class GemmaNarrator implements RecommendationNarrator {
     if (baseline.isEmpty) return baseline;
 
     try {
-      if (!await _gateway.isReady()) return baseline;
-
+      // No readiness check of its own: this narrator is only chosen once the
+      // model is ready, and generate() refuses before loading anything when no
+      // model is installed — which lands in the catch below all the same.
       final raw = await _gateway.generate(
         prompt: buildPrompt(projection, baseline),
         systemInstruction: systemInstruction,
@@ -258,9 +259,10 @@ class GemmaNarrator implements RecommendationNarrator {
       final rewritten = _parse(raw, baseline);
       return rewritten ?? baseline;
     } catch (_) {
-      // A timeout, a session that would not open, a model uninstalled between
-      // the readiness check and the call. None of them are worth a visible
-      // error: the screen is already showing complete, correct copy.
+      // No model installed, a timeout, a session that would not open, a model
+      // uninstalled since the provider chose this narrator. None of them are
+      // worth a visible error: the screen is already showing complete, correct
+      // copy.
       return baseline;
     }
   }
