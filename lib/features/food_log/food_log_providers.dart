@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,10 +10,12 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../models/food_entry.dart';
 import '../auth/auth_provider.dart';
+import '../lifecycle/app_lifecycle.dart';
 import 'api_credentials.dart';
 import 'food_analysis_client.dart';
 import 'food_log_grouping.dart';
 import 'food_log_store.dart';
+import 'pending_scan.dart';
 
 final foodAnalysisClientProvider = Provider<FoodAnalysisClient>((ref) {
   return FoodAnalysisClient(
@@ -44,6 +48,14 @@ final foodLogStoreProvider = FutureProvider<FoodLogStore>((ref) async {
 /// backs out of the picker.
 abstract class ImageCaptureGateway {
   Future<File?> capture(ImageSource source);
+
+  /// The photo a picker delivered after Android had killed the app behind it,
+  /// compressed as [capture] would have; `null` when there is none.
+  ///
+  /// The camera is a separate app, and a phone short of memory reclaims the
+  /// one in the background — this one. The picker's result then arrives at a
+  /// fresh process with no call waiting for it, and is held until asked for.
+  Future<File?> recoverLost();
 }
 
 class ImagePickerCaptureGateway implements ImageCaptureGateway {
@@ -59,11 +71,25 @@ class ImagePickerCaptureGateway implements ImageCaptureGateway {
   Future<File?> capture(ImageSource source) async {
     final picked = await ImagePicker().pickImage(source: source);
     if (picked == null) return null;
+    return _compressed(picked.path);
+  }
 
-    final target =
-        '${Directory.systemTemp.path}/vf_meal_${DateTime.now().millisecondsSinceEpoch}.jpg';
+  @override
+  Future<File?> recoverLost() async {
+    // Only Android hands a result to a process other than the one that asked.
+    if (!Platform.isAndroid) return null;
+    final response = await ImagePicker().retrieveLostData();
+    if (response.isEmpty) return null;
+    final picked = response.file ?? response.files?.firstOrNull;
+    if (picked == null) return null;
+    return _compressed(picked.path);
+  }
+
+  Future<File> _compressed(String pickedPath) async {
+    final target = '${Directory.systemTemp.path}/'
+        '${PendingScanStore.tempImagePrefix}${DateTime.now().millisecondsSinceEpoch}.jpg';
     final compressed = await FlutterImageCompress.compressAndGetFile(
-      picked.path,
+      pickedPath,
       target,
       minWidth: maxDimension,
       minHeight: maxDimension,
@@ -71,7 +97,19 @@ class ImagePickerCaptureGateway implements ImageCaptureGateway {
     );
     // Compression is an optimisation, not a requirement: if the plugin declines
     // (an unsupported format, say), upload the original rather than fail.
-    return compressed == null ? File(picked.path) : File(compressed.path);
+    if (compressed == null) return File(pickedPath);
+
+    // The picker's full-size copy has done its job. Only ever one in the app's
+    // own temp directory — which is where the picker writes the copies it
+    // hands out — so a photo in the user's gallery can never be touched.
+    if (pickedPath.startsWith(Directory.systemTemp.path)) {
+      try {
+        await File(pickedPath).delete();
+      } on FileSystemException {
+        // The OS clears its temp directory on its own schedule.
+      }
+    }
+    return File(compressed.path);
   }
 }
 
@@ -85,12 +123,41 @@ final imageCaptureGatewayProvider = Provider<ImageCaptureGateway>((ref) {
 /// the result so the screen knows whether to navigate, and the three outcomes
 /// are kept on separate channels: a draft means go to the form, `null` means the
 /// user cancelled and nothing should happen, and a throw means show the message.
+///
+/// A scan survives the app being killed partway. Its photo is held on disk
+/// until the analysis answers ([PendingScanStore]), and a photo the camera
+/// delivered to a killed app is recovered from the picker; the next launch
+/// finishes either through [hasPendingScan] and [resumePending].
 class VisionAnalysisController extends AsyncNotifier<FoodAnalysis?> {
   static const String errorPermissionDenied =
       'PERMISSION DENIED — ENABLE IN SETTINGS';
 
+  /// How many times a scan the app was backgrounded through is retried on
+  /// return before its failure is shown.
+  static const int maxRetriesOnReturn = 2;
+
+  /// Idle from the first frame. Returned synchronously so the state is data
+  /// at once: an async build would read as loading for a moment, and loading
+  /// is what [hasPendingScan] takes to mean a scan is already running — which
+  /// is exactly the moment a relaunch asks.
   @override
-  Future<FoodAnalysis?> build() async => null;
+  FutureOr<FoodAnalysis?> build() => null;
+
+  /// Set from the first line of [resumePending], before anything awaits, so a
+  /// second shell asking in the same frame cannot start the same scan again.
+  bool _resuming = false;
+
+  PendingScanStore get _pending => ref.read(pendingScanStoreProvider);
+
+  /// Whose scan this is, so a resume never finishes another account's photo.
+  /// Null only where there is no store to name a user — a test host.
+  Future<String?> _owner() async {
+    try {
+      return (await ref.read(foodLogStoreProvider.future)).uid;
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Picks an image, compresses it, and analyses it.
   ///
@@ -100,30 +167,103 @@ class VisionAnalysisController extends AsyncNotifier<FoodAnalysis?> {
     state = const AsyncLoading();
     File? image;
     try {
-      try {
-        image = await ref.read(imageCaptureGatewayProvider).capture(source);
-      } on PlatformException {
-        // image_picker reports a refused camera or library permission this way.
-        throw const FoodAnalysisException(errorPermissionDenied);
-      }
+      image = await ref.read(imageCaptureGatewayProvider).capture(source);
+    } on PlatformException catch (_, stack) {
+      // image_picker reports a refused camera or library permission this way.
+      const error = FoodAnalysisException(errorPermissionDenied);
+      state = AsyncError(error, stack);
+      throw error;
+    } catch (error, stack) {
+      state = AsyncError(error, stack);
+      rethrow;
+    }
 
-      if (image == null) {
-        // Cancelling is a deliberate choice, not a failure: back to idle in
-        // silence, and no scan spent against the rate limit.
-        state = const AsyncData(null);
-        return null;
-      }
+    if (image == null) {
+      // Cancelling is a deliberate choice, not a failure: back to idle in
+      // silence, and no scan spent against the rate limit.
+      state = const AsyncData(null);
+      return null;
+    }
 
-      final result = await ref.read(foodAnalysisClientProvider).analyze(image);
-      state = AsyncData(result);
-      return result;
+    // On disk before the upload, which is the stretch the user is most likely
+    // to spend in another app.
+    final held = await _pending.hold(image, owner: await _owner());
+    return _analyse(held);
+  }
+
+  /// Whether an earlier process left a scan unfinished: a held photo, or one
+  /// the picker delivered after the app was killed behind it.
+  ///
+  /// False while a scan is already running here, so asking twice — two shells
+  /// on the stack both checking — cannot start the same scan twice.
+  Future<bool> hasPendingScan() async {
+    if (state.isLoading || _resuming) return false;
+    final owner = await _owner();
+    if (await _pending.find(owner: owner) != null) return true;
+
+    final File? recovered;
+    try {
+      recovered = await ref.read(imageCaptureGatewayProvider).recoverLost();
+    } catch (_) {
+      // A result the picker cannot hand back is a scan that never happened.
+      return false;
+    }
+    if (recovered == null) return false;
+    await _pending.hold(recovered, owner: owner);
+    return true;
+  }
+
+  /// Finishes the scan [hasPendingScan] found, exactly as [capture] would have
+  /// finished it: same states, same result, same failures.
+  Future<FoodAnalysis?> resumePending() async {
+    if (state.isLoading || _resuming) return null;
+    _resuming = true;
+    try {
+      final pending = await _pending.find(owner: await _owner());
+      if (pending == null) return null;
+      state = const AsyncLoading();
+      return await _analyse(pending.image);
+    } finally {
+      _resuming = false;
+    }
+  }
+
+  Future<FoodAnalysis?> _analyse(File image) async {
+    // Android freezes an app shortly after it leaves the screen, so a scan the
+    // user switched away from can come back as unreachable only because the
+    // app was not running to hear the answer. That failure is the user's
+    // switching, not the network's, and is retried once they return; the photo
+    // stays held meanwhile, so being killed while away still resumes.
+    var leftDuringAttempt = false;
+    final lifecycle = ref.listen(appLifecycleProvider, (_, next) {
+      if (next != AppLifecycleState.resumed) leftDuringAttempt = true;
+    });
+
+    try {
+      for (var retries = 0;; retries++) {
+        try {
+          final result =
+              await ref.read(foodAnalysisClientProvider).analyze(image);
+          state = AsyncData(result);
+          return result;
+        } on FoodAnalysisException catch (error) {
+          final interrupted = leftDuringAttempt &&
+              error.message == FoodAnalysisClient.errorUnreachable &&
+              retries < maxRetriesOnReturn;
+          if (!interrupted) rethrow;
+          await _returnToForeground();
+          leftDuringAttempt = false;
+        }
+      }
     } catch (error, stack) {
       state = AsyncError(error, stack);
       rethrow;
     } finally {
-      // The compressed copy has served its purpose either way; leaving it would
-      // accumulate multi-megabyte files in the temp directory.
-      if (image != null && await image.exists()) {
+      lifecycle.close();
+      // Answered either way: the result is in the form, or the failure is on
+      // screen. Nothing left to resume, and no photo left behind.
+      await _pending.clear();
+      if (await image.exists()) {
         try {
           await image.delete();
         } on FileSystemException {
@@ -131,6 +271,21 @@ class VisionAnalysisController extends AsyncNotifier<FoodAnalysis?> {
         }
       }
     }
+  }
+
+  Future<void> _returnToForeground() {
+    if (ref.read(appLifecycleProvider) == AppLifecycleState.resumed) {
+      return Future.value();
+    }
+    final back = Completer<void>();
+    late final ProviderSubscription<AppLifecycleState> subscription;
+    subscription = ref.listen(appLifecycleProvider, (_, next) {
+      if (next == AppLifecycleState.resumed && !back.isCompleted) {
+        back.complete();
+        subscription.close();
+      }
+    });
+    return back.future;
   }
 }
 

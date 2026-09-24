@@ -1,6 +1,9 @@
 import 'dart:io';
 
+import 'dart:async';
+
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -10,6 +13,8 @@ import 'package:void_factor/features/food_log/api_credentials.dart';
 import 'package:void_factor/features/food_log/food_analysis_client.dart';
 import 'package:void_factor/features/food_log/food_log_providers.dart';
 import 'package:void_factor/features/food_log/food_log_store.dart';
+import 'package:void_factor/features/food_log/pending_scan.dart';
+import 'package:void_factor/features/lifecycle/app_lifecycle.dart';
 import 'package:void_factor/models/food_entry.dart';
 
 class FakeCredentialStore implements ApiCredentialStore {
@@ -53,6 +58,16 @@ class FakeImageCaptureGateway implements ImageCaptureGateway {
       throw PlatformException(code: 'camera_access_denied');
     }
     return fileToReturn;
+  }
+
+  /// What the picker hands back after the app was killed behind it.
+  File? lostFile;
+
+  @override
+  Future<File?> recoverLost() async {
+    final file = lostFile;
+    lostFile = null;
+    return file;
   }
 }
 
@@ -537,6 +552,188 @@ void main() {
         (await container.read(recentFoodLogProvider.future)).single.name,
         'Restored',
       );
+    });
+  });
+
+  group('a scan the app was killed or backgrounded through', () {
+    late Directory keep;
+    late PendingScanStore pending;
+
+    setUp(() {
+      keep = Directory('${dir.path}/support')..createSync();
+      pending = PendingScanStore(directory: () async => keep);
+    });
+
+    const success =
+        '{"name":"Dal","nutrients":{"calories":300,"protein_g":12,"carbs_g":40,"fats_g":8}}';
+
+    File photo([String name = 'vf_meal_1.jpg']) =>
+        File('${dir.path}/$name')..writeAsBytesSync(const [1, 2, 3]);
+
+    /// A process: its own container over the same disk, as a relaunch is.
+    ProviderContainer process({
+      required http.Client http,
+      FakeImageCaptureGateway? gateway,
+    }) {
+      final container = ProviderContainer(overrides: [
+        foodLogStoreProvider.overrideWith((ref) async => store),
+        pendingScanStoreProvider.overrideWithValue(pending),
+        imageCaptureGatewayProvider
+            .overrideWithValue(gateway ?? FakeImageCaptureGateway()),
+        foodAnalysisClientProvider.overrideWithValue(FoodAnalysisClient(
+          httpClient: http,
+          credentialStore: FakeCredentialStore(
+            const ApiCredentials(provider: 'GEMINI', key: 'k'),
+          ),
+          baseUrl: 'http://test.local:8080',
+          caller: () async => (uid: 'uid-1', idToken: 't'),
+        )),
+      ]);
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    MockClient answering(String body) =>
+        MockClient((_) async => http.Response(body, 200));
+
+    test('holds the photo on disk until the analysis answers', () async {
+      final answer = Completer<http.Response>();
+      final container = process(
+        http: MockClient((_) => answer.future),
+        gateway: FakeImageCaptureGateway(fileToReturn: photo()),
+      );
+
+      final scan = container
+          .read(visionAnalysisProvider.notifier)
+          .capture(ImageSource.camera);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // Mid-upload: this is what a killed process leaves for the next one.
+      expect(await pending.find(owner: 'uid-1'), isNotNull);
+
+      answer.complete(http.Response(success, 200));
+      await scan;
+      expect(await pending.find(owner: 'uid-1'), isNull);
+      expect(keep.listSync(recursive: true).whereType<File>(), isEmpty);
+    });
+
+    test('the next process finishes a scan the last one was killed during',
+        () async {
+      // What capture() leaves on disk before its upload returns.
+      await pending.hold(photo(), owner: 'uid-1');
+
+      final container = process(http: answering(success));
+      final vision = container.read(visionAnalysisProvider.notifier);
+
+      expect(await vision.hasPendingScan(), isTrue);
+      final draft = await vision.resumePending();
+
+      expect(draft!.name, 'Dal');
+      expect(draft.nutrients.calories, 300);
+      expect(container.read(visionAnalysisProvider).value?.name, 'Dal');
+      expect(await pending.find(owner: 'uid-1'), isNull);
+    });
+
+    test('recovers a photo the camera delivered to a killed app', () async {
+      final gateway = FakeImageCaptureGateway()..lostFile = photo();
+      final container = process(http: answering(success), gateway: gateway);
+      final vision = container.read(visionAnalysisProvider.notifier);
+
+      expect(await vision.hasPendingScan(), isTrue);
+      expect((await vision.resumePending())!.name, 'Dal');
+    });
+
+    test("never finishes another account's scan", () async {
+      await pending.hold(photo(), owner: 'someone-else');
+      var requests = 0;
+      final container = process(
+        http: MockClient((_) async {
+          requests++;
+          return http.Response(success, 200);
+        }),
+      );
+
+      expect(
+        await container.read(visionAnalysisProvider.notifier).hasPendingScan(),
+        isFalse,
+      );
+      expect(requests, 0);
+    });
+
+    test('has nothing to resume while a scan is already running', () async {
+      await pending.hold(photo(), owner: 'uid-1');
+      final answer = Completer<http.Response>();
+      final container = process(http: MockClient((_) => answer.future));
+      final vision = container.read(visionAnalysisProvider.notifier);
+
+      final first = vision.resumePending();
+      // A second shell asking in the same frame must not start it twice.
+      expect(await vision.resumePending(), isNull);
+      expect(await vision.hasPendingScan(), isFalse);
+
+      answer.complete(http.Response(success, 200));
+      expect((await first)!.name, 'Dal');
+    });
+
+    test('a scan cut off by leaving the app is retried on return, not failed',
+        () async {
+      var requests = 0;
+      late ProviderContainer container;
+      container = process(
+        gateway: FakeImageCaptureGateway(fileToReturn: photo()),
+        http: MockClient((_) async {
+          requests++;
+          if (requests == 1) {
+            // The user switched away, and Android froze the app mid-request.
+            container
+                .read(appLifecycleProvider.notifier)
+                .report(AppLifecycleState.paused);
+            throw const SocketException('frozen');
+          }
+          return http.Response(success, 200);
+        }),
+      );
+
+      final scan = container
+          .read(visionAnalysisProvider.notifier)
+          .capture(ImageSource.camera);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // Still reading the plate, waiting for the user rather than failing.
+      expect(container.read(visionAnalysisProvider).isLoading, isTrue);
+      expect(requests, 1);
+
+      container
+          .read(appLifecycleProvider.notifier)
+          .report(AppLifecycleState.resumed);
+      expect((await scan)!.name, 'Dal');
+      expect(requests, 2);
+    });
+
+    test('a failure while the user stayed in the app is shown at once',
+        () async {
+      var requests = 0;
+      final container = process(
+        gateway: FakeImageCaptureGateway(fileToReturn: photo()),
+        http: MockClient((_) async {
+          requests++;
+          throw const SocketException('offline');
+        }),
+      );
+
+      await expectLater(
+        container
+            .read(visionAnalysisProvider.notifier)
+            .capture(ImageSource.camera),
+        throwsA(isA<FoodAnalysisException>().having(
+          (e) => e.message,
+          'message',
+          FoodAnalysisClient.errorUnreachable,
+        )),
+      );
+      expect(requests, 1);
+      // Shown, so nothing is left to resume on the next launch.
+      expect(await pending.find(owner: 'uid-1'), isNull);
     });
   });
 }
