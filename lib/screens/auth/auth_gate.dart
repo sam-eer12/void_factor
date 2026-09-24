@@ -36,6 +36,21 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
+    // Screens above this one are restored on a relaunch before the session has
+    // been checked. If the check then lands anywhere but the dashboard — the
+    // session was ended from another device while the app was away — those
+    // screens belong to a user who is no longer signed in here, and must not
+    // stay stacked over the login screen.
+    ref.listen<AuthFlowState>(authFlowProvider, (previous, next) {
+      final settledOrStarting = previous == AuthFlowState.loading ||
+          previous == AuthFlowState.dashboard;
+      final signedOut =
+          next == AuthFlowState.login || next == AuthFlowState.onboarding;
+      if (settledOrStarting && signedOut) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    });
+
     final flowState = ref.watch(authFlowProvider);
 
     switch (flowState) {

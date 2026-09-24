@@ -1,4 +1,6 @@
 import 'dart:math';
+
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -72,6 +74,23 @@ class SessionService {
     return await _profileRepository.load();
   }
 
+  /// Whether a failed `User.reload()` means the account itself is gone, as
+  /// opposed to the reload not reaching Firebase.
+  ///
+  /// These are the codes Firebase Auth uses for a user that was deleted,
+  /// disabled, or had its tokens revoked. Anything else — a network failure, a
+  /// throttle, a platform error — leaves the account exactly as it was.
+  @visibleForTesting
+  static bool isAccountGone(Object error) {
+    if (error is! FirebaseAuthException) return false;
+    return const {
+      'user-not-found',
+      'user-disabled',
+      'user-token-expired',
+      'invalid-user-token',
+    }.contains(error.code);
+  }
+
   // Initialize/refresh the session and check onboarding
   // Returns:
   // - 'onboarding': if the user needs to fill onboarding
@@ -89,9 +108,16 @@ class SessionService {
       // 1. Verify user ID is still valid from Firebase Auth
       await currentUser.reload();
     } catch (e) {
-      // User is no longer valid (e.g., deleted, disabled)
-      await clearSession();
-      return 'login';
+      // User is no longer valid (e.g., deleted, disabled). Only then: a reload
+      // that failed because the phone is offline says nothing about the
+      // account, and this runs on every app resume — so treating it as a dead
+      // account signed people out, and erased their keys, for opening the app
+      // on a train. Offline falls through to the Firestore read below, whose
+      // own failure path already keeps a completed profile on the dashboard.
+      if (isAccountGone(e)) {
+        await clearSession();
+        return 'login';
+      }
     }
 
     // 2. Fetch the user profile and session ID from Firestore
