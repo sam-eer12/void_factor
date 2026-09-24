@@ -58,6 +58,7 @@ class SettingsScreen extends ConsumerWidget {
 
             Expanded(
               child: SingleChildScrollView(
+                restorationId: 'settings_scroll',
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -180,21 +181,21 @@ class SettingsScreen extends ConsumerWidget {
                       Icons.person_outline,
                       'EDIT PROFILE',
                       'Update physical metrics',
-                      () => Navigator.pushNamed(context, '/edit-profile'),
+                      () => Navigator.restorablePushNamed(context, '/edit-profile'),
                     ),
                     const SizedBox(height: 8),
                     _buildSettingsTile(
                       Icons.flag_outlined,
                       'GOALS & DIET',
                       'Weight goal, target & allergies',
-                      () => Navigator.pushNamed(context, '/goals-diet'),
+                      () => Navigator.restorablePushNamed(context, '/goals-diet'),
                     ),
                     const SizedBox(height: 8),
                     _buildSettingsTile(
                       Icons.notifications_none,
                       'NOTIFICATIONS',
                       'A daily nudge to log your meals',
-                      () => Navigator.pushNamed(
+                      () => Navigator.restorablePushNamed(
                           context, AppRoutes.notifications),
                     ),
                     const SizedBox(height: 8),
@@ -207,14 +208,14 @@ class SettingsScreen extends ConsumerWidget {
                       Icons.health_and_safety_outlined,
                       'HEALTH CONNECT',
                       'Sync with health services',
-                      () => Navigator.pushNamed(context, '/health-connect'),
+                      () => Navigator.restorablePushNamed(context, '/health-connect'),
                     ),
                     const SizedBox(height: 8),
                     _buildSettingsTile(
                       Icons.memory,
                       'ON-DEVICE MODEL',
                       'Wording for your recommendations',
-                      () => Navigator.pushNamed(
+                      () => Navigator.restorablePushNamed(
                           context, AppRoutes.onDeviceModel),
                     ),
                     const SizedBox(height: 8),
@@ -222,7 +223,7 @@ class SettingsScreen extends ConsumerWidget {
                       Icons.shield_outlined,
                       'PRIVACY',
                       'Export, import & delete your data',
-                      () => Navigator.pushNamed(context, AppRoutes.privacy),
+                      () => Navigator.restorablePushNamed(context, AppRoutes.privacy),
                     ),
                     const SizedBox(height: 24),
 
@@ -258,7 +259,7 @@ class SettingsScreen extends ConsumerWidget {
                           MonolithButton(
                             label: 'MANAGE KEYS',
                             style: MonolithButtonStyle.secondary,
-                            onPressed: () => Navigator.pushNamed(
+                            onPressed: () => Navigator.restorablePushNamed(
                                 context, AppRoutes.apiKey),
                           ),
                         ],

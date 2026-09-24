@@ -243,4 +243,140 @@ void main() {
       expect(dir.listSync(), isEmpty);
     });
   });
+
+  group('journal', () {
+    List<String> names() =>
+        dir.listSync().map((e) => e.uri.pathSegments.last).toList()..sort();
+
+    Future<FoodLogStore> seeded(List<FoodEntry> entries) async {
+      final store = FoodLogStore(dir: dir, uid: 'uid-1');
+      await store.writeAll(entries);
+      await store.readAll();
+      return store;
+    }
+
+    test('logging one meal appends a line instead of rewriting the log',
+        () async {
+      final store = await seeded([entry('Old')]);
+      final before = store.file.readAsStringSync();
+      final current = await store.readAll();
+
+      await store.writeAll([entry('New'), ...current]);
+
+      // The snapshot is untouched: the meal went into the journal.
+      expect(store.file.readAsStringSync(), before);
+      expect(names().where((n) => n.endsWith('.journal')), hasLength(1));
+      expect(
+        (await FoodLogStore(dir: dir, uid: 'uid-1').readAll()).map((e) => e.name),
+        ['New', 'Old'],
+      );
+    });
+
+    test('replays an edit and a delete in place, in order', () async {
+      final a = entry('A');
+      final b = entry('B');
+      final c = entry('C');
+      final store = await seeded([a, b, c]);
+      final current = await store.readAll();
+
+      final edited = current[1].copyWith(name: 'B edited');
+      final afterEdit = [current[0], edited, current[2]];
+      await store.writeAll(afterEdit);
+      await store.writeAll([afterEdit[0], afterEdit[1]]);
+
+      expect(
+        (await FoodLogStore(dir: dir, uid: 'uid-1').readAll()).map((e) => e.name),
+        ['A', 'B edited'],
+      );
+    });
+
+    test('a line torn by a crash mid-append costs only that line', () async {
+      final store = await seeded([entry('Kept')]);
+      final current = await store.readAll();
+      await store.writeAll([entry('Also kept'), ...current]);
+      final journal = dir
+          .listSync()
+          .whereType<File>()
+          .singleWhere((f) => f.path.endsWith('.journal'));
+      journal.writeAsStringSync('{"op":"insert","at":0,"ent', mode: FileMode.append);
+
+      expect(
+        (await FoodLogStore(dir: dir, uid: 'uid-1').readAll()).map((e) => e.name),
+        ['Also kept', 'Kept'],
+      );
+    });
+
+    test('folds the journal into a new snapshot before it grows unbounded',
+        () async {
+      final store = await seeded(const []);
+      var current = await store.readAll();
+      // One past the limit: the last write must land as a snapshot.
+      for (var i = 0; i <= FoodLogStore.maxJournalOps; i++) {
+        current = [entry('Meal $i'), ...current];
+        await store.writeAll(current);
+      }
+
+      expect(names().where((n) => n.endsWith('.journal')), isEmpty);
+      final reread = await FoodLogStore(dir: dir, uid: 'uid-1').readAll();
+      expect(reread, hasLength(FoodLogStore.maxJournalOps + 1));
+      expect(reread.first.name, 'Meal ${FoodLogStore.maxJournalOps}');
+    });
+
+    test('ignores and removes a journal no snapshot names', () async {
+      // What a crash between a new snapshot and deleting the old journal
+      // leaves: its changes are already in the snapshot, and must not be
+      // applied a second time.
+      final store = await seeded([entry('Only once')]);
+      final current = await store.readAll();
+      File('${dir.path}/food_logs_uid-1.0.journal').writeAsStringSync(
+        '${jsonEncode({'op': 'insert', 'at': 0, 'entry': current.first.toMap()})}\n'
+        '${jsonEncode({'op': 'insert', 'at': 0, 'entry': entry('Ghost').toMap()})}\n',
+      );
+
+      expect((await store.readAll()).map((e) => e.name), ['Only once']);
+      expect(names(), ['food_logs_uid-1.json']);
+    });
+
+    test('a failed append is reported, and the log is as it was', () async {
+      final store = await seeded([entry('Before')]);
+      final current = await store.readAll();
+      // A directory where the journal goes: the append cannot happen.
+      Directory('${dir.path}/food_logs_uid-1.1.journal').createSync();
+
+      await expectLater(
+        store.writeAll([entry('Lost'), ...current]),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(
+        (await FoodLogStore(dir: dir, uid: 'uid-1').readAll()).map((e) => e.name),
+        ['Before'],
+      );
+    });
+
+    test('delete removes the journal along with the log', () async {
+      final store = await seeded([entry('Toast')]);
+      final current = await store.readAll();
+      await store.writeAll([entry('Jam'), ...current]);
+
+      await store.delete();
+
+      expect(dir.listSync(), isEmpty);
+    });
+
+    test('reads a log too large for the UI isolate off it, unchanged',
+        () async {
+      final big = [
+        for (var i = 0; i < 3000; i++) entry('Meal $i with a longer name'),
+      ];
+      final store = FoodLogStore(dir: dir, uid: 'uid-1');
+      await store.writeAll(big);
+      expect(store.file.lengthSync(), greaterThan(FoodLogStore.backgroundParseBytes));
+
+      final reread = await FoodLogStore(dir: dir, uid: 'uid-1').readAll();
+
+      expect(reread, hasLength(3000));
+      expect(reread.first.name, 'Meal 0 with a longer name');
+      expect(reread.last.id, big.last.id);
+    });
+  });
 }

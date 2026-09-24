@@ -32,17 +32,16 @@ class ManualFoodLogScreen extends ConsumerWidget {
           children: [
             _topBar(context),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _header(context),
-                    const SizedBox(height: 24),
-                    _history(context, ref),
-                    const SizedBox(height: 20),
-                  ],
-                ),
+              child: CustomScrollView(
+                // Where the list was scrolled comes back with the screen when
+                // Android restores an app it killed in the background.
+                restorationId: 'food_log_history',
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.all(20),
+                    sliver: _history(context, ref),
+                  ),
+                ],
               ),
             ),
           ],
@@ -52,13 +51,13 @@ class ManualFoodLogScreen extends ConsumerWidget {
         currentIndex: 1,
         onTap: (i) {
           if (i == 0) {
-            Navigator.pushReplacementNamed(context, '/dashboard');
+            Navigator.restorablePushReplacementNamed(context, '/dashboard');
           } else if (i == 1) {
-            Navigator.pushReplacementNamed(context, '/ai-vision');
+            Navigator.restorablePushReplacementNamed(context, '/ai-vision');
           } else if (i == 2) {
-            Navigator.pushReplacementNamed(context, '/projections');
+            Navigator.restorablePushReplacementNamed(context, '/projections');
           } else if (i == 3) {
-            Navigator.pushReplacementNamed(context, '/settings');
+            Navigator.restorablePushReplacementNamed(context, '/settings');
           }
         },
       ),
@@ -110,12 +109,10 @@ class ManualFoodLogScreen extends ConsumerWidget {
             ],
           ),
           GestureDetector(
-            onTap: () => Navigator.push(
+            onTap: () => Navigator.restorablePush(
               context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    const FoodEntryFormScreen(source: FoodSource.manual),
-              ),
+              FoodEntryFormScreen.restorableRoute,
+              arguments: FoodEntryFormScreen.manualArguments,
             ),
             child: Container(
               padding: const EdgeInsets.all(12),
@@ -128,9 +125,43 @@ class ManualFoodLogScreen extends ConsumerWidget {
         ],
       );
 
+  /// The header, then the log: one lazily built list, so only the rows on
+  /// screen are ever laid out however long the window's log grows.
+  ///
+  /// Flattened to plain items first — a gap, a day heading, an entry — so the
+  /// builder can make each widget only when it scrolls into view.
   Widget _history(BuildContext context, WidgetRef ref) {
-    return ref.watch(recentFoodLogProvider).when(
-          loading: () => const Padding(
+    final items = <Object>[
+      const _HistoryHeader(),
+      const _Gap(24),
+      ...ref.watch(recentFoodLogProvider).when(
+            loading: () => const [_HistoryLoading()],
+            error: (_, _) => const [_Notice(logUnavailableLabel)],
+            data: (entries) {
+              final groups = groupByDay(entries, now: DateTime.now());
+              if (groups.isEmpty) return const [_Notice(emptyLogLabel)];
+              return [
+                for (final (index, group) in groups.indexed) ...[
+                  if (index > 0) const _Gap(24),
+                  _DayLabel(group.label),
+                  const _Gap(12),
+                  for (final (row, entry) in group.entries.indexed) ...[
+                    if (row > 0) const _Gap(8),
+                    entry,
+                  ],
+                ],
+              ];
+            },
+          ),
+      const _Gap(20),
+    ];
+
+    return SliverList.builder(
+      itemCount: items.length,
+      itemBuilder: (context, index) => switch (items[index]) {
+        _HistoryHeader() => _header(context),
+        _Gap(:final height) => SizedBox(height: height),
+        _HistoryLoading() => const Padding(
             padding: EdgeInsets.symmetric(vertical: 32),
             child: Center(
               child: CircularProgressIndicator.adaptive(
@@ -139,26 +170,12 @@ class ManualFoodLogScreen extends ConsumerWidget {
               ),
             ),
           ),
-          error: (_, _) => _notice(logUnavailableLabel),
-          data: (entries) {
-            final groups = groupByDay(entries, now: DateTime.now());
-            if (groups.isEmpty) return _notice(emptyLogLabel);
-
-            return Column(
-              children: [
-                for (final (index, group) in groups.indexed) ...[
-                  if (index > 0) const SizedBox(height: 24),
-                  _dayHeader(group.label),
-                  const SizedBox(height: 12),
-                  for (final (row, entry) in group.entries.indexed) ...[
-                    if (row > 0) const SizedBox(height: 8),
-                    _logRow(context, ref, entry),
-                  ],
-                ],
-              ],
-            );
-          },
-        );
+        _Notice(:final message) => _notice(message),
+        _DayLabel(:final label) => _dayHeader(label),
+        final FoodEntry entry => _logRow(context, ref, entry),
+        _ => const SizedBox.shrink(),
+      },
+    );
   }
 
   Widget _dayHeader(String day) => Container(
@@ -195,4 +212,29 @@ class ManualFoodLogScreen extends ConsumerWidget {
         onEdit: () => editFoodEntry(context, entry),
         onDelete: () => deleteFoodEntry(context, ref, entry),
       );
+}
+
+// The kinds of item the history list is flattened into.
+
+class _HistoryHeader {
+  const _HistoryHeader();
+}
+
+class _HistoryLoading {
+  const _HistoryLoading();
+}
+
+class _Gap {
+  const _Gap(this.height);
+  final double height;
+}
+
+class _Notice {
+  const _Notice(this.message);
+  final String message;
+}
+
+class _DayLabel {
+  const _DayLabel(this.label);
+  final String label;
 }

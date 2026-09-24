@@ -11,6 +11,19 @@ import '../../widgets/monolith_button.dart';
 import '../../widgets/monolith_card.dart';
 import '../../widgets/monolith_text_field.dart';
 
+/// Builds the form's route from its saved arguments.
+///
+/// Top level and annotated because `Navigator.restorablePush` finds it again in
+/// a fresh process through a callback handle, and AOT compilation drops
+/// anything native code reaches that is not marked as an entry point — a static
+/// method would need its whole class marked too.
+@pragma('vm:entry-point')
+Route<void> foodEntryFormRoute(BuildContext context, Object? arguments) {
+  return MaterialPageRoute<void>(
+    builder: (_) => FoodEntryFormScreen.fromArguments(arguments),
+  );
+}
+
 /// The one form both logging paths end at.
 ///
 /// Vision arrives with [initialName], [initialNutrients] and [initialQuantity]
@@ -18,9 +31,10 @@ import '../../widgets/monolith_text_field.dart';
 /// is editable, because a photo estimate the user cannot correct is worse than
 /// no estimate.
 ///
-/// Pushed as a plain [MaterialPageRoute] rather than a named route: the
-/// arguments are typed, and a named route would flatten them into
-/// `Object? arguments` and lose that.
+/// Pushed through [restorableRoute] rather than a named route: the constructor
+/// stays typed, and only the trip through saved state — which Android makes
+/// when it kills the app in the background — goes through a plain map, in
+/// [scanArguments], [manualArguments] and [editArguments].
 class FoodEntryFormScreen extends ConsumerStatefulWidget {
   final String initialName;
 
@@ -63,40 +77,112 @@ class FoodEntryFormScreen extends ConsumerStatefulWidget {
           editing: entry,
         );
 
+  /// The form as one of the argument maps below describes it.
+  factory FoodEntryFormScreen.fromArguments(Object? arguments) {
+    final args = _stringKeyed(arguments) ?? const <String, dynamic>{};
+
+    final editing = args['editing'];
+    if (editing is Map<String, dynamic>) {
+      final entry = FoodEntry.tryFromMap(editing);
+      if (entry != null) return FoodEntryFormScreen.edit(entry);
+    }
+
+    final nutrients = args['nutrients'];
+    final quantity = args['quantity'];
+    return FoodEntryFormScreen(
+      initialName: args['name']?.toString() ?? '',
+      initialNutrients: nutrients is Map<String, dynamic>
+          ? Nutrients.fromMap(nutrients)
+          : const Nutrients(),
+      initialQuantity: quantity is num ? quantity.toDouble() : 1.0,
+      source: FoodSource.fromWire(args['source']),
+    );
+  }
+
+  /// What a scan read off the plate.
+  static Map<String, Object?> scanArguments(FoodAnalysis draft) => {
+        'name': draft.name,
+        'nutrients': draft.nutrients.toMap(),
+        'quantity': draft.quantity,
+        'source': FoodSource.vision.wireValue,
+      };
+
+  /// A blank manual entry.
+  static final Map<String, Object?> manualArguments = {
+    'source': FoodSource.manual.wireValue,
+  };
+
+  /// A correction to an entry already logged.
+  static Map<String, Object?> editArguments(FoodEntry entry) => {
+        'editing': entry.toMap(),
+      };
+
+  /// For `Navigator.restorablePush`. See [foodEntryFormRoute].
+  static const RestorableRouteBuilder<void> restorableRoute = foodEntryFormRoute;
+
+  /// Saved state comes back with `Object?` keys all the way down, which
+  /// [FoodEntry.tryFromMap] and [Nutrients.fromMap] would read as absent.
+  static Map<String, dynamic>? _stringKeyed(Object? value) {
+    if (value is! Map) return null;
+    return {
+      for (final MapEntry(:key, :value) in value.entries)
+        key.toString(): value is Map ? _stringKeyed(value) : value,
+    };
+  }
+
   @override
   ConsumerState<FoodEntryFormScreen> createState() =>
       _FoodEntryFormScreenState();
 }
 
-class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
+class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen>
+    with RestorationMixin {
   static const String saveLabel = 'SAVE ENTRY';
   static const String saveEditLabel = 'SAVE CHANGES';
   static const String editTitle = 'EDIT ENTRY';
 
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _caloriesController = TextEditingController();
-  final _proteinController = TextEditingController();
-  final _carbsController = TextEditingController();
-  final _fatsController = TextEditingController();
+
+  // Restorable, so what the user has typed survives the app being killed in
+  // the background — the route comes back through its arguments, and the
+  // fields come back as they were left rather than as they were seeded.
+  late final _nameController =
+      RestorableTextEditingController(text: widget.initialName);
+  late final _caloriesController = RestorableTextEditingController(
+      text: _seed(widget.initialNutrients.calories));
+  late final _proteinController = RestorableTextEditingController(
+      text: _seed(widget.initialNutrients.proteinG));
+  late final _carbsController = RestorableTextEditingController(
+      text: _seed(widget.initialNutrients.carbsG));
+  late final _fatsController = RestorableTextEditingController(
+      text: _seed(widget.initialNutrients.fatsG));
 
   // An edit already has a quantity the user chose, and it outranks anything a
   // caller seeded.
-  late double _quantity =
-      widget.editing?.quantity ?? FoodEntry.clampQuantity(widget.initialQuantity);
+  late final _quantity = RestorableDouble(
+      widget.editing?.quantity ?? FoodEntry.clampQuantity(widget.initialQuantity));
   bool _isSaving = false;
+
+  @override
+  String? get restorationId => 'food_entry_form';
+
+  @override
+  void restoreState(RestorationBucket? oldBucket, bool initialRestore) {
+    registerForRestoration(_nameController, 'name');
+    registerForRestoration(_caloriesController, 'calories');
+    registerForRestoration(_proteinController, 'protein');
+    registerForRestoration(_carbsController, 'carbs');
+    registerForRestoration(_fatsController, 'fats');
+    registerForRestoration(_quantity, 'quantity');
+  }
 
   @override
   void initState() {
     super.initState();
-    _nameController.text = widget.initialName;
-    _caloriesController.text = _seed(widget.initialNutrients.calories);
-    _proteinController.text = _seed(widget.initialNutrients.proteinG);
-    _carbsController.text = _seed(widget.initialNutrients.carbsG);
-    _fatsController.text = _seed(widget.initialNutrients.fatsG);
-
     // The total is the number the user is actually deciding about, so it has to
     // follow the fields rather than the values the model first proposed.
+    // Listened to on the restorable wrappers, which forward their controller's
+    // changes and outlive the controller a restore swaps in.
     for (final controller in _numericControllers) {
       controller.addListener(_onNutrientsChanged);
     }
@@ -109,10 +195,11 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
       controller.dispose();
     }
     _nameController.dispose();
+    _quantity.dispose();
     super.dispose();
   }
 
-  List<TextEditingController> get _numericControllers => [
+  List<RestorableTextEditingController> get _numericControllers => [
         _caloriesController,
         _proteinController,
         _carbsController,
@@ -132,10 +219,10 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
   static double _parse(String raw) => double.tryParse(raw.trim()) ?? 0;
 
   Nutrients get _perServing => Nutrients(
-        calories: _parse(_caloriesController.text),
-        proteinG: _parse(_proteinController.text),
-        carbsG: _parse(_carbsController.text),
-        fatsG: _parse(_fatsController.text),
+        calories: _parse(_caloriesController.value.text),
+        proteinG: _parse(_proteinController.value.text),
+        carbsG: _parse(_carbsController.value.text),
+        fatsG: _parse(_fatsController.value.text),
       );
 
   /// The entry as it stands. Used for the live preview and for the save, so what
@@ -147,15 +234,15 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
       // copyWith, not create: a new id would orphan the original as a duplicate,
       // and a new timestamp would move the meal to a day it was not eaten on.
       return edited.copyWith(
-        name: _nameController.text.trim(),
+        name: _nameController.value.text.trim(),
         nutrients: _perServing,
-        quantity: _quantity,
+        quantity: _quantity.value,
       );
     }
     return FoodEntry.create(
-      name: _nameController.text,
+      name: _nameController.value.text,
       nutrients: _perServing,
-      quantity: _quantity,
+      quantity: _quantity.value,
       source: widget.source,
     );
   }
@@ -198,6 +285,7 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
             _topBar(),
             Expanded(
               child: SingleChildScrollView(
+                restorationId: 'food_entry_form_scroll',
                 padding: const EdgeInsets.all(20),
                 child: Form(
                   key: _formKey,
@@ -207,7 +295,7 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
                       MonolithTextField(
                         label: 'NAME',
                         hint: 'WHAT DID YOU EAT?',
-                        controller: _nameController,
+                        controller: _nameController.value,
                         validator: (value) =>
                             (value == null || value.trim().isEmpty)
                                 ? 'REQUIRED'
@@ -223,7 +311,7 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
                       const SizedBox(height: 12),
                       MonolithTextField(
                         label: 'KCAL',
-                        controller: _caloriesController,
+                        controller: _caloriesController.value,
                         keyboardType:
                             const TextInputType.numberWithOptions(decimal: true),
                         validator: (value) {
@@ -239,19 +327,19 @@ class _FoodEntryFormScreenState extends ConsumerState<FoodEntryFormScreen> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(child: _macroField('PROTEIN', _proteinController)),
+                          Expanded(child: _macroField('PROTEIN', _proteinController.value)),
                           const SizedBox(width: 12),
-                          Expanded(child: _macroField('CARBS', _carbsController)),
+                          Expanded(child: _macroField('CARBS', _carbsController.value)),
                           const SizedBox(width: 12),
-                          Expanded(child: _macroField('FATS', _fatsController)),
+                          Expanded(child: _macroField('FATS', _fatsController.value)),
                         ],
                       ),
                       const SizedBox(height: 24),
                       Text('QUANTITY', style: MonolithTheme.labelMedium),
                       const SizedBox(height: 8),
                       FoodQuantityStepper(
-                        quantity: _quantity,
-                        onChanged: (value) => setState(() => _quantity = value),
+                        quantity: _quantity.value,
+                        onChanged: (value) => setState(() => _quantity.value = value),
                       ),
                       const SizedBox(height: 24),
                       _totalCard(draft),

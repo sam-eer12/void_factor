@@ -31,6 +31,10 @@ class _FakeGemma implements GemmaGateway {
   @override
   Future<bool> isReady() async => ready;
 
+  /// Generations that got as far as the model: what the real gateway reaches
+  /// only once a model is installed.
+  int modelLoads = 0;
+
   @override
   Future<String> generate({
     required String prompt,
@@ -41,6 +45,9 @@ class _FakeGemma implements GemmaGateway {
     lastPrompt = prompt;
     lastSystemInstruction = systemInstruction;
     lastTimeout = timeout;
+    // As FlutterGemmaGateway does: refuse before loading anything.
+    if (!ready) throw StateError('No active inference model set.');
+    modelLoads++;
     if (error != null) throw error!;
     return response;
   }
@@ -56,10 +63,14 @@ class _FakeGemma implements GemmaGateway {
   @override
   Future<void> uninstall() async =>
       throw UnsupportedError('not exercised by the narrator');
+
+  @override
+  Future<bool> isInstalling() async =>
+      throw UnsupportedError('not exercised by the narrator');
 }
 
-/// A gateway whose readiness check itself fails — a model uninstalled underneath
-/// a live screen, or a plugin that will not initialize.
+/// A gateway whose plugin itself fails — a model uninstalled underneath a live
+/// screen, or a plugin that will not initialize.
 class _BrokenGemma implements GemmaGateway {
   @override
   Future<bool> isReady() async => throw StateError('plugin unavailable');
@@ -70,7 +81,7 @@ class _BrokenGemma implements GemmaGateway {
     required String systemInstruction,
     required Duration timeout,
   }) async =>
-      throw StateError('unreachable');
+      throw StateError('plugin unavailable');
 
   @override
   Future<void> install({
@@ -82,6 +93,10 @@ class _BrokenGemma implements GemmaGateway {
 
   @override
   Future<void> uninstall() async =>
+      throw UnsupportedError('not exercised by the narrator');
+
+  @override
+  Future<bool> isInstalling() async =>
       throw UnsupportedError('not exercised by the narrator');
 }
 
@@ -308,13 +323,13 @@ void main() {
           reason: 'templated copy must never be labelled as model-written');
     }
 
-    test('when no model is installed, without asking it anything', () async {
+    test('when no model is installed, without loading one', () async {
       final gateway = _FakeGemma(ready: false);
       await expectTemplated(gateway);
-      expect(gateway.generateCalls, 0);
+      expect(gateway.modelLoads, 0);
     });
 
-    test('when the readiness check itself throws', () async {
+    test('when the plugin itself fails', () async {
       await expectTemplated(_BrokenGemma());
     });
 

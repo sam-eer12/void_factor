@@ -5,6 +5,7 @@ import '../theme/monolith_theme.dart';
 import 'routes.dart';
 import '../features/auth/link_verification_service.dart';
 import '../features/health/health_providers.dart';
+import '../features/lifecycle/app_lifecycle.dart';
 
 class MonolithApp extends ConsumerStatefulWidget {
   const MonolithApp({super.key});
@@ -34,6 +35,7 @@ class _MonolithAppState extends ConsumerState<MonolithApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    ref.read(appLifecycleProvider.notifier).report(state);
     // Re-read health metrics whenever the app returns to the foreground.
     if (state == AppLifecycleState.resumed) {
       ref.read(healthMetricsProvider.notifier).refresh();
@@ -47,6 +49,12 @@ class _MonolithAppState extends ConsumerState<MonolithApp>
       child: MaterialApp(
         title: 'Void_Factor',
         navigatorKey: _navigatorKey,
+        // Android may kill the app while it is in the background — the camera
+        // alone can take enough memory to force it. With a scope here the tab,
+        // the screens pushed over it, what is typed into the entry form and
+        // where each list was scrolled all come back on relaunch, instead of a
+        // fresh start on the dashboard.
+        restorationScopeId: 'app',
         debugShowCheckedModeBanner: false,
         theme: MonolithTheme.themeData,
         initialRoute: AppRoutes.authGate,

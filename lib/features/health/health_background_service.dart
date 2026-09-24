@@ -30,15 +30,29 @@ void healthCallbackDispatcher() {
   });
 }
 
+Future<void>? _initialization;
+
 /// Initializes WorkManager. Safe to call on every platform: the plugin is a
-/// no-op where unsupported. Call once from `main()`.
-Future<void> initHealthBackground() async {
-  await Workmanager().initialize(healthCallbackDispatcher);
+/// no-op where unsupported.
+///
+/// `main()` starts it after the first frame rather than awaiting it before
+/// `runApp`, because nothing on screen needs it. Everything that talks to
+/// WorkManager awaits it first, so a schedule can never outrun it. Memoized,
+/// and forgotten on failure so the next caller retries instead of replaying
+/// the same error.
+Future<void> initHealthBackground() {
+  final started = _initialization ??=
+      Workmanager().initialize(healthCallbackDispatcher);
+  return started.catchError((Object error, StackTrace stack) {
+    if (identical(_initialization, started)) _initialization = null;
+    Error.throwWithStackTrace(error, stack);
+  });
 }
 
 /// Schedules the periodic Android refresh (idempotent — same unique name just
 /// updates the pending request). Called when health sync is enabled.
 Future<void> scheduleHealthRefresh() async {
+  await initHealthBackground();
   await Workmanager().registerPeriodicTask(
     _healthRefreshUnique,
     healthRefreshTask,
@@ -50,5 +64,6 @@ Future<void> scheduleHealthRefresh() async {
 
 /// Cancels the periodic refresh. Called on disable / logout.
 Future<void> cancelHealthRefresh() async {
+  await initHealthBackground();
   await Workmanager().cancelByUniqueName(_healthRefreshUnique);
 }

@@ -150,4 +150,38 @@ void main() {
     service.gate!.complete();
     await rerun;
   });
+
+  group('a failed account reload', () {
+    test('signs out only for an account that is gone', () {
+      for (final code in const [
+        'user-not-found',
+        'user-disabled',
+        'user-token-expired',
+        'invalid-user-token',
+      ]) {
+        expect(
+          SessionService.isAccountGone(FirebaseAuthException(code: code)),
+          isTrue,
+          reason: code,
+        );
+      }
+    });
+
+    test('keeps the session when the phone is only offline', () {
+      // This check runs on every resume. Treating a dropped connection as a
+      // dead account signed people out — and erased their keys — for opening
+      // the app without signal.
+      expect(
+        SessionService.isAccountGone(
+            FirebaseAuthException(code: 'network-request-failed')),
+        isFalse,
+      );
+      expect(
+        SessionService.isAccountGone(
+            FirebaseAuthException(code: 'too-many-requests')),
+        isFalse,
+      );
+      expect(SessionService.isAccountGone(Exception('socket closed')), isFalse);
+    });
+  });
 }

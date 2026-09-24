@@ -18,20 +18,46 @@ class EditProfileScreen extends ConsumerStatefulWidget {
   ConsumerState<EditProfileScreen> createState() => _EditProfileScreenState();
 }
 
-class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
-  final _heightController = TextEditingController();
-  final _weightController = TextEditingController();
-  final _ageController = TextEditingController();
-  String _gender = 'MALE';
+class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
+    with RestorationMixin {
+  // Restorable, so edits in progress survive Android killing the app in the
+  // background. `_prefilled` is restored with them: a restored form must keep
+  // what the user typed, not be overwritten by the saved profile again.
+  final _height = RestorableTextEditingController();
+  final _weight = RestorableTextEditingController();
+  final _age = RestorableTextEditingController();
+  final _genderValue = RestorableString('MALE');
+  final _prefilledValue = RestorableBool(false);
 
-  bool _prefilled = false;
+  TextEditingController get _heightController => _height.value;
+  TextEditingController get _weightController => _weight.value;
+  TextEditingController get _ageController => _age.value;
+  String get _gender => _genderValue.value;
+  set _gender(String value) => _genderValue.value = value;
+  bool get _prefilled => _prefilledValue.value;
+  set _prefilled(bool value) => _prefilledValue.value = value;
+
   bool _isSaving = false;
 
   @override
+  String? get restorationId => 'edit_profile';
+
+  @override
+  void restoreState(RestorationBucket? oldBucket, bool initialRestore) {
+    registerForRestoration(_height, 'height');
+    registerForRestoration(_weight, 'weight');
+    registerForRestoration(_age, 'age');
+    registerForRestoration(_genderValue, 'gender');
+    registerForRestoration(_prefilledValue, 'prefilled');
+  }
+
+  @override
   void dispose() {
-    _heightController.dispose();
-    _weightController.dispose();
-    _ageController.dispose();
+    _height.dispose();
+    _weight.dispose();
+    _age.dispose();
+    _genderValue.dispose();
+    _prefilledValue.dispose();
     super.dispose();
   }
 

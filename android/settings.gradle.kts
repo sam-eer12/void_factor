@@ -25,3 +25,7 @@ plugins {
 }
 
 include(":app")
+
+// The LiteRT-LM inference engine as an on-demand Play Feature Delivery module.
+// See gemma_engine/build.gradle.kts.
+include(":gemma_engine")

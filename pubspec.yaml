@@ -50,6 +50,9 @@ dependencies:
   # Android kills the half-gigabyte transfer at nine minutes.
   background_downloader: ^9.5.5
   path_provider: ^2.1.5
+  # Already present transitively through flutter_gemma. Named because the app
+  # preloads the on-demand engine's libraries itself; see gemma_engine.dart.
+  ffi: ^2.2.0
   liquid_glass_widgets: ^0.21.3
   flutter_secure_storage: ^9.2.2
   app_links: ^6.1.1
@@ -93,6 +96,10 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    # Space Grotesk, bundled so the first paint never waits on a font download.
+    # google_fonts finds these by file name. Only the weights the theme uses:
+    # w500, and w700 — which also serves w900, the family's heaviest being 700.
+    - assets/google_fonts/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

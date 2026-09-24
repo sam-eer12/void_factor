@@ -19,7 +19,7 @@ ship**.
 
 | Suite | Command |
 | --- | --- |
-| Flutter (660 tests) | `flutter test` |
+| Flutter (809 tests) | `flutter test` |
 | Microservice (26 tests) | `cd microservice && pytest` |
 | Firestore rules (9 tests) | see `test_rules/README.md` |
 
@@ -45,6 +45,8 @@ lib/
 ├── screens/                 # UI, grouped by feature
 ├── theme/                   # monolith_theme.dart — the whole design system
 └── widgets/                 # Shared components
+
+android/gemma_engine/        # On-demand Play module: the on-device inference engine
 
 microservice/                # FastAPI: auth + three provider routes
 ├── app/auth.py              # Firebase ID token verification
@@ -105,6 +107,35 @@ flutter analyze --fatal-infos && flutter test
 cd microservice && pytest
 ```
 
+### Store builds
+
+Play takes an app bundle, and only an arm64 one is worth building:
+
+```sh
+flutter build appbundle --release --target-platform android-arm64 \
+  --dart-define=FOOD_API_BASE_URL=https://<host>
+```
+
+The on-device inference engine is not in the base of that bundle. It is the
+on-demand module in `android/gemma_engine`, which Play installs when the user
+downloads the model — see **The size problem** below. To exercise that install
+without Play, use bundletool's local testing against a device or emulator:
+
+```sh
+bundletool build-apks --local-testing \
+  --bundle build/app/outputs/bundle/release/app-release.aab --output app.apks
+bundletool install-apks --apks app.apks
+```
+
+`flutter run` and `flutter build apk` produce APKs, which have no module to
+install from, so those keep the engine in the base exactly as before.
+
+`flutter build appbundle` ends by checking the bundle's native libraries were
+stripped, using `apkanalyzer` from the Android SDK **command-line tools**. Without
+them it reports "failed to strip debug symbols" and exits non-zero even though
+the bundle is fine — install *Android SDK Command-line Tools* from Android
+Studio's SDK Manager.
+
 ### Capacity
 
 ```sh
@@ -153,6 +184,10 @@ per request as a header. The server's own keys are a local-testing convenience
 and are left blank in production.
 
 **Food and weight logs are per-device JSON**, one file per uid, never synced.
+The food log is a snapshot plus a journal: logging, editing or deleting one meal
+appends one line instead of rewriting the whole log, and every 256 lines the
+journal is folded into a new snapshot. A log large enough to matter is parsed
+off the UI isolate.
 That is a deliberate trade — no cross-device sync, no server-side food data —
 and **Settings → Privacy** is the mitigation: export produces one file holding
 profile, meals and weigh-ins; import merges by entry id, so running it twice
@@ -165,7 +200,26 @@ mirrored locally for offline reads.
 **Projections are pure Dart**; recommendations are ranked in Dart and then
 worded either by on-device Gemma (once downloaded in Settings → On-device model)
 or by built-in templates. The model only changes the wording, never which
-recommendations were chosen.
+recommendations were chosen. It runs on the GPU with a CPU fallback, stays
+loaded between generations, and is unloaded when the app leaves the screen or
+the system reports memory pressure.
+
+**The app resumes where it was left.** Android kills backgrounded apps — the
+camera alone can take enough memory to do it — so the app is built to come back
+as it was:
+
+- Flutter state restoration brings back the tab, the screens pushed over it,
+  what is typed into the entry, profile and goals forms, and scroll positions.
+  API keys and the HuggingFace token are deliberately *not* restored.
+- A scan's photo is held on disk (`pending_scan.dart`) from capture until the
+  analysis answers. A photo the camera delivered to a killed app is recovered
+  from the picker. Either way the next launch returns to the vision tab and
+  finishes the scan into the same confirm form.
+- A scan the user switched away from, which Android froze mid-request, is
+  retried when they come back rather than reported as a network failure.
+- A model download that outlived the app is re-attached to on relaunch.
+- Resuming while offline no longer signs the user out; only an account that is
+  actually gone (deleted, disabled, revoked) does.
 
 ---
 
@@ -179,10 +233,11 @@ Five things stand between this repo and users:
    `firebase deploy --only firestore:rules --project signinpractice-bfade`.
    Passing tests locally does not make them live.
 3. **Build against the deployed host.**
-   `flutter build apk --release --dart-define=FOOD_API_BASE_URL=https://<host>`.
+   `flutter build appbundle --release --target-platform android-arm64 --dart-define=FOOD_API_BASE_URL=https://<host>`.
    Without the flag every scan fails with "CAN'T REACH ANALYSIS SERVICE".
 4. **Create an upload keystore.** `android/key.properties.example`. Until it
-   exists, release builds fall back to debug signing and cannot be published.
+   exists, release builds fall back to debug signing and cannot be published;
+   a bundle build says so in its output.
    When you make one, its SHA-256 has to be added in two places or email links
    stop opening the app for every release build — see **Email links and App
    Links** below.
@@ -262,42 +317,31 @@ because a policy that has drifted from what the app does is worse than none.
 
 ### The size problem
 
-**The arm64 build is 216.6 MB, over Google Play's 200 MB download limit.** Every
-modern phone is arm64, so this blocks a Play release as things stand.
+**Solved: Play's install-time download is 14.3 MB on arm64**, down from a
+216.6 MB APK that was over Play's 200 MB limit. It was all `flutter_gemma`'s
+native stack — never the model, whose weights are downloaded at runtime — and it
+came apart into three piles:
 
-| ABI | Download size |
-| --- | --- |
-| `arm64-v8a` | **216.6 MB** |
-| `x86_64` | 58.5 MB |
-| `armeabi-v7a` | 43.8 MB |
+| | What | Where it went |
+| --- | --- | --- |
+| ~136 MB | MediaPipe's `.task` LLM runtime, image generation, the qdrant vector store, the Qualcomm NPU stack | Excluded. This app runs a `.litertlm` model through LiteRT-LM over FFI and never loads them. The NPU would need a model compiled for one specific SoC. |
+| ~52 MB (20.5 MB download) | LiteRT-LM and its GPU accelerators and samplers | `android/gemma_engine`, an on-demand module Play installs alongside the model download |
+| the rest | Flutter, the app, small plugin libraries | The base |
 
-It is all `flutter_gemma`'s native inference stack, and none of it is the model
-— those weights are already downloaded at runtime, not bundled. arm64 is four
-times the others because the Qualcomm NPU backends are arm64-only:
+Measured with `bundletool get-size total` on the arm64 split APKs.
 
-```
-libllm_inference_engine_jni.so   26.4 MB
-libLiteRtLm.so                   24.7 MB
-libqdrant_edge_ffi.so            19.3 MB   (vector DB — unused here)
-libmediapipe_tasks_vision_jni.so 14.3 MB
-…_image_generator_jni.so         14.0 MB   (image generation — unused here)
-libQnnHtpV*Skel.so               ~11 MB each, several
-```
+The engine arrives in the same progress bar as the model. Because a module
+installed while the app runs is not on the process's library path,
+`gemma_engine.dart` loads each library by path, in dependency order, before
+flutter_gemma opens them by name; `GemmaEngineDelivery.kt` finds the paths. The
+list of libraries is declared once, in `android/app/build.gradle.kts`, and read
+by the module and the Kotlin loader. **If flutter_gemma adds or renames a native
+library, update that list** — a library that lands in the base unlisted costs
+size, and one missing from it breaks on-demand installs.
 
-Three ways out, in increasing order of effort:
-
-1. **Ship without on-device Gemma.** `TemplateNarrator` already exists and is
-   already the fallback when the model is absent, so the app degrades to
-   built-in wording with no code change — only a dependency removal. Roughly
-   180 MB back.
-2. **Play Feature Delivery** — move the inference engine into an on-demand
-   module, downloaded when the user opts into the on-device model. Keeps the
-   feature, but it is real Gradle work.
-3. **Wait for `flutter_gemma` to split its backends.** Nothing to do but track
-   it.
-
-This is not a regression from any recent change — it is what the dependency has
-always cost. It only became visible when a release build first completed.
+The app is **arm64-only** (`abiFilters`). LiteRT-LM ships no other Android ABI,
+so 32-bit and x86_64 devices could never run the model; they now cannot install
+the app either.
 
 ---
 
@@ -311,9 +355,15 @@ always cost. It only became visible when a release build first completed.
 - **A bad Gemini key is indistinguishable from a Gemini outage**, because the
   provider module collapses every failure into one message. OpenRouter and
   NVIDIA report their upstream status.
-- **The log file grows without bound.** Roughly 700 KB per year at ten meals a
-  day, read whole at launch. Fine for years, not forever.
-- **The app is very large on arm64** — see "The size problem" above.
+- **The food log is still read whole at launch.** Writes are now appends, and a
+  large log is parsed off the UI isolate, but nothing is ever dropped from it —
+  deliberately, since export hands back every meal. Roughly 700 KB per year at
+  ten meals a day.
+- **The on-demand engine needs Play.** A build installed some other way from the
+  split APKs cannot fetch the module; the model offer then says to install from
+  Google Play. Universal APKs from bundletool, and every `flutter build apk`,
+  carry the engine in the base and are unaffected.
+- **arm64 only**, as above.
 - **A recreated replica can stay dark.** nginx resolves upstream names once at
   start and declares no `resolver`, so a replica that returns on a new container
   address is not used again until the six-hourly reload. A restart that keeps
