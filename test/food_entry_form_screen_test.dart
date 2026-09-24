@@ -509,4 +509,85 @@ void main() {
       expect(find.text('20.0x'), findsOneWidget);
     });
   });
+
+  group('when Android kills the app in the background', () {
+    /// A host with restoration on, as the app has, that opens the form the way
+    /// a scan does: restorably, from arguments.
+    Future<void> pumpRestorableHost(WidgetTester tester, Object arguments) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          foodLogStoreProvider.overrideWith((ref) async => store),
+        ],
+        child: MaterialApp(
+          restorationScopeId: 'app',
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: ElevatedButton(
+                onPressed: () => Navigator.restorablePush(
+                  context,
+                  FoodEntryFormScreen.restorableRoute,
+                  arguments: arguments,
+                ),
+                child: const Text('HOST'),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('HOST'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the confirm form comes back with what was typed into it',
+        (tester) async {
+      await pumpRestorableHost(
+        tester,
+        FoodEntryFormScreen.scanArguments((
+          name: 'Dal',
+          nutrients: const Nutrients(calories: 300, proteinG: 12),
+          quantity: 2,
+        )),
+      );
+      await tester.enterText(fieldFor('NAME'), 'Dal Makhani');
+      await tester.enterText(fieldFor('KCAL'), '320');
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pump();
+
+      await tester.restartAndRestore();
+
+      expect(find.text('CONFIRM ENTRY'), findsOneWidget);
+      expect(find.text('Dal Makhani'), findsOneWidget);
+      expect(find.text('320'), findsOneWidget);
+      // 320 kcal × 2.5 servings: the stepper came back where it was left too.
+      expect(find.text('800 KCAL'), findsOneWidget);
+    });
+
+    testWidgets('an edit comes back as the same entry, and saves over it',
+        (tester) async {
+      final original = FoodEntry.create(
+        name: 'Toast',
+        nutrients: const Nutrients(calories: 120),
+        quantity: 1,
+        source: FoodSource.manual,
+      );
+      store.saved.add(original);
+      await pumpRestorableHost(
+          tester, FoodEntryFormScreen.editArguments(original));
+      await tester.enterText(fieldFor('NAME'), 'Buttered Toast');
+      // Restoration data is written at the end of a frame.
+      await tester.pump();
+
+      await tester.restartAndRestore();
+      await tester.tap(find.text('SAVE CHANGES'));
+      await tester.pumpAndSettle();
+
+      expect(store.saved, hasLength(1));
+      expect(store.saved.single.id, original.id);
+      expect(store.saved.single.name, 'Buttered Toast');
+    });
+  });
 }

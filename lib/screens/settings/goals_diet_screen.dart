@@ -18,18 +18,51 @@ class GoalsDietScreen extends ConsumerStatefulWidget {
   ConsumerState<GoalsDietScreen> createState() => _GoalsDietScreenState();
 }
 
-class _GoalsDietScreenState extends ConsumerState<GoalsDietScreen> {
-  final _targetWeightController = TextEditingController();
-  WeightGoal _goal = WeightGoal.maintain;
-  double _weeklyRate = 0.5;
-  final Set<String> _allergies = {};
+class _GoalsDietScreenState extends ConsumerState<GoalsDietScreen>
+    with RestorationMixin {
+  // Restorable, so edits in progress survive Android killing the app in the
+  // background. `_prefilled` is restored with them: a restored form must keep
+  // what the user chose, not be overwritten by the saved profile again.
+  final _targetWeight = RestorableTextEditingController();
+  final _goalValue = RestorableEnum<WeightGoal>(
+    WeightGoal.maintain,
+    values: WeightGoal.values,
+  );
+  final _weeklyRateValue = RestorableDouble(0.5);
+  final _allergiesValue = _RestorableStringSet();
+  final _prefilledValue = RestorableBool(false);
 
-  bool _prefilled = false;
+  TextEditingController get _targetWeightController => _targetWeight.value;
+  WeightGoal get _goal => _goalValue.value;
+  set _goal(WeightGoal value) => _goalValue.value = value;
+  double get _weeklyRate => _weeklyRateValue.value;
+  set _weeklyRate(double value) => _weeklyRateValue.value = value;
+  Set<String> get _allergies => _allergiesValue.value;
+  set _allergies(Set<String> value) => _allergiesValue.value = value;
+  bool get _prefilled => _prefilledValue.value;
+  set _prefilled(bool value) => _prefilledValue.value = value;
+
   bool _isSaving = false;
 
   @override
+  String? get restorationId => 'goals_diet';
+
+  @override
+  void restoreState(RestorationBucket? oldBucket, bool initialRestore) {
+    registerForRestoration(_targetWeight, 'target_weight');
+    registerForRestoration(_goalValue, 'goal');
+    registerForRestoration(_weeklyRateValue, 'weekly_rate');
+    registerForRestoration(_allergiesValue, 'allergies');
+    registerForRestoration(_prefilledValue, 'prefilled');
+  }
+
+  @override
   void dispose() {
-    _targetWeightController.dispose();
+    _targetWeight.dispose();
+    _goalValue.dispose();
+    _weeklyRateValue.dispose();
+    _allergiesValue.dispose();
+    _prefilledValue.dispose();
     super.dispose();
   }
 
@@ -40,9 +73,7 @@ class _GoalsDietScreenState extends ConsumerState<GoalsDietScreen> {
     _weeklyRate = profile.weeklyRate;
     _targetWeightController.text =
         profile.targetWeight > 0 ? _trim(profile.targetWeight) : '';
-    _allergies
-      ..clear()
-      ..addAll(profile.allergies);
+    _allergies = {...profile.allergies};
   }
 
   String _trim(double v) =>
@@ -207,12 +238,12 @@ class _GoalsDietScreenState extends ConsumerState<GoalsDietScreen> {
             children: UserProfile.allergyOptions.map((allergy) {
               final isSelected = _allergies.contains(allergy);
               return GestureDetector(
+                // Reassigned rather than mutated, so the restorable copy
+                // hears about it.
                 onTap: () => setState(() {
-                  if (isSelected) {
-                    _allergies.remove(allergy);
-                  } else {
-                    _allergies.add(allergy);
-                  }
+                  _allergies = isSelected
+                      ? ({..._allergies}..remove(allergy))
+                      : {..._allergies, allergy};
                 }),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -342,4 +373,20 @@ class _RateSelector extends StatelessWidget {
       }).toList(),
     );
   }
+}
+
+/// The selected allergies, kept across a restore as a plain list.
+class _RestorableStringSet extends RestorableValue<Set<String>> {
+  @override
+  Set<String> createDefaultValue() => <String>{};
+
+  @override
+  void didUpdateValue(Set<String>? oldValue) => notifyListeners();
+
+  @override
+  Set<String> fromPrimitives(Object? data) =>
+      {...?(data as List<Object?>?)?.whereType<String>()};
+
+  @override
+  Object toPrimitives() => value.toList();
 }

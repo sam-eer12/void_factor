@@ -19,10 +19,25 @@ String deletedLabel(FoodEntry entry) =>
     'DELETED ${entry.name.trim().toUpperCase()}';
 
 /// Opens [entry] in the form, pre-filled. Saving replaces it in place.
-Future<void> editFoodEntry(BuildContext context, FoodEntry entry) {
-  return Navigator.push(
+///
+/// Restorable, like every way into the form, so an edit half made when Android
+/// kills the app is still there when it comes back.
+void editFoodEntry(BuildContext context, FoodEntry entry) {
+  Navigator.restorablePush(
     context,
-    MaterialPageRoute(builder: (_) => FoodEntryFormScreen.edit(entry)),
+    FoodEntryFormScreen.restorableRoute,
+    arguments: FoodEntryFormScreen.editArguments(entry),
+  );
+}
+
+/// Opens the form on what a scan read off the plate, for the user to confirm.
+///
+/// Takes the navigator rather than a context because both callers resolve it
+/// before a long wait — the scan — during which their own context may go.
+void openScanResult(NavigatorState navigator, FoodAnalysis draft) {
+  navigator.restorablePush(
+    FoodEntryFormScreen.restorableRoute,
+    arguments: FoodEntryFormScreen.scanArguments(draft),
   );
 }
 

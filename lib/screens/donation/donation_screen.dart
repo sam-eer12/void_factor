@@ -82,7 +82,7 @@ class DonationScreen extends StatelessWidget {
             '/projections',
             '/settings'
           ];
-          Navigator.pushReplacementNamed(context, routes[i]);
+          Navigator.restorablePushReplacementNamed(context, routes[i]);
         },
       ),
     );

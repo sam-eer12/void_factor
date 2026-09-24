@@ -125,7 +125,7 @@ class PrivacyScreen extends ConsumerWidget {
             label: readPolicyLabel,
             style: MonolithButtonStyle.secondary,
             onPressed: () =>
-                Navigator.pushNamed(context, AppRoutes.privacyPolicy),
+                Navigator.restorablePushNamed(context, AppRoutes.privacyPolicy),
           ),
         ],
       ),

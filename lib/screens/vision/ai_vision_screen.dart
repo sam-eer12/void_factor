@@ -9,7 +9,6 @@ import '../../models/food_entry.dart';
 import '../../theme/monolith_theme.dart';
 import '../../widgets/food_log_row.dart';
 import '../dashboard/monolith_shell.dart';
-import '../food_log/food_entry_form_screen.dart';
 import '../food_log/food_log_actions.dart';
 
 /// Photograph a meal, have it read, confirm what was logged.
@@ -42,6 +41,7 @@ class AiVisionScreen extends ConsumerWidget {
             _topBar(context),
             Expanded(
               child: SingleChildScrollView(
+                restorationId: 'vision_scroll',
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,23 +97,12 @@ class AiVisionScreen extends ConsumerWidget {
     // Null means the picker was dismissed: a deliberate choice, so nothing
     // happens and nothing is said.
     if (draft == null || !navigator.mounted) return;
-    // Unpacked before the builder closure, which a nullable local declared
-    // without an initializer cannot be promoted inside.
-    final (:name, :nutrients, :quantity) = draft;
 
-    await navigator.push(
-      MaterialPageRoute(
-        builder: (_) => FoodEntryFormScreen(
-          initialName: name,
-          initialNutrients: nutrients,
-          // What the model counted on the plate. The figures beside it are for
-          // one of those servings, so opening on 1 would under-report a plate
-          // of three by two thirds before the user had touched anything.
-          initialQuantity: quantity,
-          source: FoodSource.vision,
-        ),
-      ),
-    );
+    // Opens on the quantity the model counted on the plate as well as its
+    // name and figures. The figures are for one of those servings, so opening
+    // on 1 would under-report a plate of three by two thirds before the user
+    // had touched anything.
+    openScanResult(navigator, draft);
   }
 
   Widget _topBar(BuildContext context) => Container(
