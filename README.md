@@ -137,9 +137,16 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 
 **Authentication.** Firebase email-link and Google sign-in. Every analysis
 request carries an ID token that the microservice verifies against Google's
-public keys, plus an `X-User-Id` header that nginx rate-limits on (10 req/min
-per user). A forged uid can change which rate-limit bucket it lands in; it
-cannot reach a provider.
+public keys. nginx has the service verify that token *before* it counts the
+request, and rate-limits on the verified uid (10 req/min per user), so a forged
+or borrowed uid never touches anyone's bucket. A per-address limit in front of
+that bounds what unauthenticated callers can ask of the verifier. See
+`nginx/api_http.conf` for why that takes two hops.
+
+**Uploads are checked by their bytes.** The service sniffs JPEG, PNG, WebP and
+HEIC from the file's magic number, refuses anything else before a provider is
+called, and tells the provider the real type. Responses are a typed contract
+(`microservice/app/schemas.py`): four non-negative numbers, never `null`.
 
 **Provider keys never leave the device.** They live in secure storage and travel
 per request as a header. The server's own keys are a local-testing convenience
@@ -297,8 +304,8 @@ always cost. It only became visible when a release build first completed.
 ## Known limits
 
 - **No cross-device sync.** Export is a recovery path, not sync.
-- **The rate-limit bucket is forgeable** — nginx decides before FastAPI
-  verifies. Authorization is not forgeable.
+- **No per-day quota.** The per-user limit is per minute, in nginx memory; a
+  daily cap would need Redis or similar.
 - **A saved provider key is never verified**, so a typo surfaces on the next
   scan rather than at save time.
 - **A bad Gemini key is indistinguishable from a Gemini outage**, because the

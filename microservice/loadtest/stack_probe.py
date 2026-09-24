@@ -40,63 +40,107 @@ def wait_for_stack(timeout: float = 90) -> None:
 
 
 def functional_checks() -> dict:
-    """What the configuration claims, asserted against the running stack."""
+    """What the configuration claims, asserted against the running stack.
+
+    Each check records what it saw and whether that was what it expected; the
+    probe exits non-zero if any expectation fails, which is what lets CI run it
+    as a smoke test of the real nginx in front of the real routes.
+    """
     print("\n[gate] nginx request gating")
     image = jpeg_of(20_000)
     body = multipart_body(image)
     ctype = {"Content-Type": f"multipart/form-data; boundary={BOUNDARY}"}
+    url = f"{BASE}/api/v1/gemini"
+    stamp = int(time.time())
 
     gate = {}
-    r = httpx.post(f"{BASE}/api/v1/gemini", content=body, headers=ctype, timeout=30)
-    print(f"  no X-User-Id            -> {r.status_code} (expect 400)")
-    gate["no_user_id"] = r.status_code
+    failures = []
 
-    uid = f"gateuser{int(time.time())}"
-    headers = {
-        **ctype,
-        "X-User-Id": uid,
-        "Authorization": f"Bearer {mint(uid)}",
-        "X-Gemini-Key": "loadtest-key",
-    }
-    r = httpx.post(f"{BASE}/api/v1/gemini", content=body, headers=headers, timeout=90)
-    print(f"  authenticated           -> {r.status_code} (expect 200)")
-    gate["authenticated"] = r.status_code
+    def check(label, name, response, expected, detail_prefix=None):
+        ok = response.status_code == expected
+        if ok and detail_prefix is not None:
+            try:
+                ok = str(response.json().get("detail", "")).startswith(detail_prefix)
+            except ValueError:
+                ok = False
+        print(f"  {label:<34} -> {response.status_code} (expect {expected}"
+              + (f", detail {detail_prefix}..." if detail_prefix else "")
+              + (")" if ok else ")  FAIL"))
+        gate[name] = response.status_code
+        if not ok:
+            failures.append(name)
+
+    def user(uid):
+        return {
+            **ctype,
+            "X-User-Id": uid,
+            "Authorization": f"Bearer {mint(uid)}",
+            "X-Gemini-Key": "loadtest-key",
+        }
+
+    r = httpx.post(url, content=body, headers=ctype, timeout=30)
+    check("no credentials", "no_credentials", r, 401, "auth:")
+
+    headers = user(f"gateuser{stamp}")
+    r = httpx.post(url, content=body, headers=headers, timeout=90)
+    check("authenticated", "authenticated", r, 200)
+    if r.status_code == 200:
+        nutrients = r.json().get("nutrients", {})
+        if any(not isinstance(v, (int, float)) for v in nutrients.values()):
+            failures.append("contract")
+            print("  response nutrients are not all numbers  FAIL")
 
     bad = {**headers, "Authorization": "Bearer not-a-token"}
-    r = httpx.post(f"{BASE}/api/v1/gemini", content=body, headers=bad, timeout=30)
-    print(f"  forged token            -> {r.status_code} (expect 401)")
-    gate["forged_token"] = r.status_code
+    r = httpx.post(url, content=body, headers=bad, timeout=30)
+    check("forged token", "forged_token", r, 401, "auth:")
+
+    # The header the limiter keys on, supplied by the client. nginx must
+    # overwrite it with what verification returned, so this is just a forgery.
+    spoofed = {**bad, "X-Verified-Uid": f"gateuser{stamp}"}
+    r = httpx.post(url, content=body, headers=spoofed, timeout=30)
+    check("forged token + X-Verified-Uid", "spoofed_verified_uid", r, 401, "auth:")
+
+    r = httpx.post(url, content=multipart_body(b"<html>not a photo</html>"),
+                   headers=headers, timeout=30)
+    check("non-image upload", "non_image", r, 415, "image:")
 
     if os.getenv("PROBE_OVERSIZE") == "1":
         # nginx caps the body at 12m so a huge upload is refused at the proxy,
         # before a worker has spent anything reading it.
         huge = multipart_body(jpeg_of(13_000_000))
-        r = httpx.post(f"{BASE}/api/v1/gemini", content=huge, headers=headers,
-                       timeout=60)
-        print(f"  13MB upload             -> {r.status_code} (expect 413)")
-        gate["oversized_13mb"] = r.status_code
+        r = httpx.post(url, content=huge, headers=headers, timeout=60)
+        check("13MB upload", "oversized_13mb", r, 413)
 
-    r = httpx.post(f"{BASE}/api/v1/gemini",
-                   content=b"not multipart at all", headers=headers, timeout=30)
-    print(f"  malformed body          -> {r.status_code} (expect 4xx, not 5xx)")
+    r = httpx.post(url, content=b"not multipart at all", headers=headers, timeout=30)
+    print(f"  {'malformed body':<34} -> {r.status_code} (expect 4xx)"
+          + ("" if 400 <= r.status_code < 500 else "  FAIL"))
     gate["malformed_body"] = r.status_code
+    if not 400 <= r.status_code < 500:
+        failures.append("malformed_body")
+
+    # The hole the verified key closes: someone else's uid in X-User-Id, with a
+    # real token of the attacker's own. Every one is refused, and none of them
+    # may cost the victim anything — their full burst must still be there.
+    victim = f"victim{stamp}"
+    borrowed = {**user(f"attacker{stamp}"), "X-User-Id": victim}
+    with httpx.Client(timeout=30) as client:
+        drained = [client.post(url, content=body, headers=borrowed).status_code
+                   for _ in range(12)]
+    print(f"  {'12 with a borrowed uid':<34} -> {sorted(set(drained))} (expect [401])"
+          + ("" if set(drained) == {401} else "  FAIL"))
+    gate["borrowed_uid"] = drained
+    if set(drained) != {401}:
+        failures.append("borrowed_uid")
 
     # 10r/m with burst=5 nodelay: a handful land immediately, the rest are shed.
-    burst_uid = f"burstuser{int(time.time())}"
-    burst_headers = {
-        **ctype,
-        "X-User-Id": burst_uid,
-        "Authorization": f"Bearer {mint(burst_uid)}",
-        "X-Gemini-Key": "loadtest-key",
-    }
+    # Sent as the victim above, so this is also the proof their bucket is whole.
+    burst_headers = user(victim)
     codes = []
     started = time.monotonic()
     with httpx.Client(timeout=90) as client:
         for _ in range(12):
             codes.append(
-                client.post(
-                    f"{BASE}/api/v1/gemini", content=body, headers=burst_headers
-                ).status_code
+                client.post(url, content=body, headers=burst_headers).status_code
             )
     accepted = sum(1 for c in codes if c == 200)
     limited = sum(1 for c in codes if c == 429)
@@ -105,10 +149,18 @@ def functional_checks() -> dict:
     # sent, so sequential requests see more than the bare burst of 5.
     elapsed = time.monotonic() - started
     allowance = 5 + int(elapsed * 10 / 60)
-    print(f"  12 rapid from one user  -> {accepted} x 200, {limited} x 429 "
-          f"over {elapsed:.1f}s (burst 5 + refill = {allowance} allowed)")
+    # burst=5 nodelay admits the request that arrives plus five more, so a
+    # whole bucket shows at least six before the first 429.
+    whole = accepted >= 6 and limited > 0 and accepted <= allowance + 1
+    print(f"  {'12 rapid from the victim':<34} -> {accepted} x 200, {limited} x 429 "
+          f"over {elapsed:.1f}s (burst 5 + refill = {allowance} allowed)"
+          + ("" if whole else "  FAIL"))
     gate.update({"burst_accepted": accepted, "burst_limited": limited,
                  "burst_elapsed_s": elapsed})
+    if not whole:
+        failures.append("burst")
+
+    gate["failures"] = failures
     return gate
 
 
@@ -177,6 +229,11 @@ def main() -> None:
     if target:
         with open(target, "w") as fh:
             json.dump(out, fh, indent=2)
+
+    failed = out.get("gate", {}).get("failures")
+    if failed:
+        print(f"\n[gate] FAILED: {', '.join(failed)}")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

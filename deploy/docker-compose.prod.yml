@@ -61,6 +61,7 @@ services:
       - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
       - ./templates:/etc/nginx/templates:ro
       - ../nginx/api_locations.conf:/etc/nginx/api_locations.conf:ro
+      - ../nginx/api_http.conf:/etc/nginx/api_http.conf:ro
       - certbot-conf:/etc/letsencrypt:ro
       - certbot-www:/var/www/certbot:ro
     # A reload every 6h, so a renewed certificate is picked up without anyone

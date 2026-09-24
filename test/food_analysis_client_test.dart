@@ -294,6 +294,51 @@ void main() {
   });
 
   group('error mapping', () {
+    Future<void> expectMessage(FoodAnalysisClient client, String message) =>
+        expectLater(
+          client.analyze(image),
+          throwsA(isA<FoodAnalysisException>()
+              .having((e) => e.message, 'message', message)),
+        );
+
+    test("413 from nginx's body cap says the photo is too large", () async {
+      // nginx answers with its own HTML page, so there is no detail to read.
+      final client = clientWith(MockClient((_) async {
+        return http.Response('<html>413 Request Entity Too Large</html>', 413);
+      }));
+      await expectMessage(client, 'PHOTO TOO LARGE — TRY A SMALLER ONE');
+    });
+
+    test("413 from the service's own cap says the same", () async {
+      final client = clientWith(MockClient((_) async {
+        return http.Response(detailBody('image: too large'), 413);
+      }));
+      await expectMessage(client, 'PHOTO TOO LARGE — TRY A SMALLER ONE');
+    });
+
+    test('an upload that is not an image blames the photo', () async {
+      final client = clientWith(MockClient((_) async {
+        return http.Response(detailBody('image: unrecognised format'), 415);
+      }));
+      await expectMessage(client, "COULDN'T READ THAT PHOTO — ENTER MANUALLY");
+    });
+
+    test('an empty upload blames the photo', () async {
+      final client = clientWith(MockClient((_) async {
+        return http.Response(detailBody('image: empty upload'), 400);
+      }));
+      await expectMessage(client, "COULDN'T READ THAT PHOTO — ENTER MANUALLY");
+    });
+
+    test('a verifier outage at nginx reads as the service not being ready',
+        () async {
+      final client = clientWith(MockClient((_) async {
+        return http.Response(detailBody('auth: verifier unavailable'), 503);
+      }));
+      await expectMessage(
+          client, 'ANALYSIS SERVICE NOT READY — TRY AGAIN LATER');
+    });
+
     test('429 from nginx becomes the rate-limit message', () async {
       final client = clientWith(MockClient((_) async {
         // nginx's limit_req, not the microservice.
@@ -503,8 +548,8 @@ void main() {
 
   group('signed-out guard', () {
     test('throws without calling nginx when there is no uid', () async {
-      // nginx returns a bare 400 for an empty X-User-Id, which would surface as
-      // a confusing provider error.
+      // With no user there is no token, and the request could only come back
+      // 401 — a round trip, and a scan, to learn what is already known.
       var called = false;
       final client = clientWith(
         MockClient((_) async {
@@ -740,6 +785,48 @@ void main() {
       // Carrying the first provider's key to the second would guarantee the
       // fallback fails for the same reason the leader did.
       expect(headers, {'gemini': 'g-key', 'nvidia': 'nv-key'});
+    });
+
+    test('tries the next key when this provider cannot read the format',
+        () async {
+      // A HEIC photo is fine for Gemini and refused by OpenRouter.
+      final seen = <String>[];
+      final client = clientWith(
+        routed({
+          'openrouter': http.Response(
+              detailBody('image: format not supported by this provider'), 415),
+          'gemini': http.Response(successBody(name: 'Dal'), 200),
+        }, seen),
+        chain: const [
+          ApiCredentials(provider: 'OPENROUTER', key: 'or'),
+          ApiCredentials(provider: 'GEMINI', key: 'g'),
+        ],
+      );
+
+      final (:name, nutrients: _, quantity: _) = await client.analyze(image);
+
+      expect(seen, ['openrouter', 'gemini']);
+      expect(name, 'Dal');
+    });
+
+    test('does not spend another scan on a file that is not a photo',
+        () async {
+      final seen = <String>[];
+      final client = clientWith(
+        routed({
+          'gemini':
+              http.Response(detailBody('image: unrecognised format'), 415),
+        }, seen),
+        chain: const [
+          ApiCredentials(provider: 'GEMINI', key: 'g'),
+          ApiCredentials(provider: 'OPENROUTER', key: 'or'),
+        ],
+      );
+
+      await expectLater(
+          client.analyze(image), throwsA(isA<FoodAnalysisException>()));
+      // The next provider would refuse the same bytes for the same reason.
+      expect(seen, ['gemini']);
     });
 
     test('stops at the first key that works', () async {

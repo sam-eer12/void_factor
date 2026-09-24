@@ -2,13 +2,14 @@ import base64
 import httpx
 from fastapi import HTTPException
 
-from app import config
+from app import config, http_pool
 from app.parsing import parse_model_json, normalize
+from app.schemas import FoodAnalysis
 
 
-def build_vision_messages(image_bytes: bytes) -> list:
+def build_vision_messages(image_bytes: bytes, mime_type: str) -> list:
     b64 = base64.b64encode(image_bytes).decode("utf-8")
-    data_uri = f"data:image/jpeg;base64,{b64}"
+    data_uri = f"data:{mime_type};base64,{b64}"
     return [
         {
             "role": "user",
@@ -25,15 +26,20 @@ async def call_openai_compatible(
     api_key: str,
     model: str,
     image_bytes: bytes,
+    mime_type: str,
     extra_payload: dict | None = None,
-) -> dict:
-    payload = {"model": model, "messages": build_vision_messages(image_bytes)}
+) -> FoodAnalysis:
+    payload = {
+        "model": model,
+        "messages": build_vision_messages(image_bytes, mime_type),
+    }
     if extra_payload:
         payload.update(extra_payload)
     headers = {"Authorization": f"Bearer {api_key}"}
     try:
-        async with httpx.AsyncClient(timeout=60) as http_client:
-            resp = await http_client.post(url, headers=headers, json=payload)
+        # The shared pool, not a client per call: a fresh client paid a TLS
+        # handshake to the provider on every analysis. See app/http_pool.py.
+        resp = await http_pool.client().post(url, headers=headers, json=payload)
     except httpx.HTTPError:
         raise HTTPException(status_code=502, detail="provider request failed")
     if resp.status_code != 200:

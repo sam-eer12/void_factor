@@ -1,6 +1,7 @@
 name: CI
 
-# Three suites pass today and nothing enforced it. This does.
+# Three suites pass today and nothing enforced it. This does. The stack job adds
+# what unit tests cannot see: the real nginx in front of the real routes.
 on:
   push:
     branches: [main]
@@ -72,6 +73,50 @@ jobs:
 
       - run: python -m pytest -q
 
+  stack:
+    name: Stack — nginx + service smoke
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE: docker compose -f docker-compose.yml -f microservice/loadtest/compose.loadtest.yml
+      # Short, so twelve sequential requests in the burst check finish quickly.
+      # Set for every compose call, not just `up`: a `run` that saw a different
+      # value would recreate the service mid-job.
+      LOADTEST_PROVIDER_MS: '200'
+      PROBE_PHASES: gate
+      PROBE_OVERSIZE: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      # The harness signs test tokens with a throwaway key the service is told
+      # to trust (loadtest/stub_app.py). It is gitignored, so it is made here —
+      # readable by the container's non-root user, which a 0600 file owned by
+      # the runner is not. Same for the directory the probe writes results to.
+      - name: Throwaway signing key
+        run: |
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+            -out microservice/loadtest/.loadtest_key.pem
+          chmod 644 microservice/loadtest/.loadtest_key.pem
+          mkdir -p microservice/loadtest/results
+          chmod 777 microservice/loadtest/results
+
+      # The development stack with only the provider stubbed: the shipped
+      # image, nginx.conf, api_http.conf and api_locations.conf as they are.
+      - run: $COMPOSE up -d --build --wait
+
+      # Exits non-zero on any unmet expectation: auth refused as JSON, a forged
+      # or borrowed uid never touching a bucket, a non-image refused, the body
+      # cap, and the per-user burst.
+      - run: $COMPOSE run --rm generator
+
+      - name: Stack logs
+        if: failure()
+        run: $COMPOSE logs --no-color
+
+      # Production is a different top-level file, a TLS template and two
+      # replicas. `nginx -t` against a throwaway certificate catches a broken
+      # one here instead of as a restart loop on the instance.
+      - run: sh deploy/check-nginx-config.sh
+
   firestore-rules:
     name: Firestore rules
     runs-on: ubuntu-latest
@@ -95,3 +140,43 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm install --no-audit --no-fund --no-save firebase-tools
       - run: npx --no-install firebase emulators:exec --only firestore --project demo-void-factor "node --test rules.test.mjs"
+
+  # Rules that only pass in the emulator protect nothing. On a push to main,
+  # after the emulator suite above has passed, this publishes them.
+  #
+  # Inert until the repository has a FIREBASE_SERVICE_ACCOUNT secret: the JSON
+  # key of a service account holding "Firebase Rules Admin" and "Service Usage
+  # Consumer" (firebase-tools checks the Firestore API is enabled before it
+  # deploys), and nothing broader. Without it the job reports that it skipped,
+  # and passes.
+  firestore-rules-deploy:
+    name: Firestore rules — deploy
+    needs: firestore-rules
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      HAS_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID || 'signinpractice-bfade' }}
+    steps:
+      - name: No credentials configured
+        if: env.HAS_CREDENTIALS != 'true'
+        run: echo "::notice::FIREBASE_SERVICE_ACCOUNT is not set; rules were not deployed."
+
+      - uses: actions/checkout@v4
+        if: env.HAS_CREDENTIALS == 'true'
+
+      - uses: google-github-actions/auth@v2
+        if: env.HAS_CREDENTIALS == 'true'
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - uses: actions/setup-node@v4
+        if: env.HAS_CREDENTIALS == 'true'
+        with:
+          node-version: '22'
+
+      - name: Deploy firestore.rules
+        if: env.HAS_CREDENTIALS == 'true'
+        run: >
+          npx --yes firebase-tools deploy --only firestore:rules
+          --project "$FIREBASE_PROJECT_ID" --non-interactive
