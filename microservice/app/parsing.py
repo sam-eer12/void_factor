@@ -1,5 +1,16 @@
 import json
+import math
+import re
+
 from fastapi import HTTPException
+
+from app.schemas import FoodAnalysis, Nutrients
+
+NUTRIENT_KEYS = ("calories", "protein_g", "carbs_g", "fats_g")
+
+# A number at the start of a string, so "12 g" or "105kcal" — the units a model
+# adds when it forgets it was asked for bare numbers — still read as the number.
+_LEADING_NUMBER = re.compile(r"\s*(\d+(?:\.\d+)?)")
 
 
 def _strip_json_fences(text: str) -> str:
@@ -32,7 +43,30 @@ def _to_quantity(value) -> float:
     return quantity if quantity > 0 else 1.0
 
 
-def normalize(data: dict) -> dict:
+def _to_nutrient(value) -> float | None:
+    """One macro as a finite non-negative number, or None when there is none.
+
+    None rather than zero at this stage so `normalize` can tell a reading with a
+    gap in it from a reading with nothing in it at all.
+    """
+    if isinstance(value, bool):
+        # bool is an int subclass; `true` is not 1 gram of anything.
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        match = _LEADING_NUMBER.match(value)
+        if match is None:
+            return None
+        number = float(match.group(1))
+    else:
+        return None
+    if not math.isfinite(number) or number < 0:
+        return None
+    return number
+
+
+def normalize(data: dict) -> FoodAnalysis:
     """Coerce a provider's parsed JSON into {name, quantity, nutrients:{...}}.
 
     Accepts either the nested target shape or a flat {food_name, calories, ...}.
@@ -41,6 +75,12 @@ def normalize(data: dict) -> dict:
     plate; the nutrients themselves are always for one. Read from the aliases a
     model reaches for when it ignores the asked-for key, in the same spirit as
     `food_name` above.
+
+    Every nutrient leaves as a number. One the model omitted or garbled becomes
+    0 — the form shows it and the user can correct it, which is the same thing
+    the client did with a null before this contract existed. A reading where
+    *none* of the four is usable is not a reading, and is refused as one: a
+    food with zero of everything would be saved as a real entry otherwise.
     """
     if not isinstance(data, dict):
         raise HTTPException(status_code=502, detail="invalid response from model")
@@ -52,13 +92,14 @@ def normalize(data: dict) -> dict:
         quantity = data.get("servings")
     if quantity is None:
         quantity = data.get("count")
-    return {
-        "name": data.get("name") or data.get("food_name") or "",
-        "quantity": _to_quantity(quantity),
-        "nutrients": {
-            "calories": nutrients.get("calories"),
-            "protein_g": nutrients.get("protein_g"),
-            "carbs_g": nutrients.get("carbs_g"),
-            "fats_g": nutrients.get("fats_g"),
-        },
-    }
+    readings = {key: _to_nutrient(nutrients.get(key)) for key in NUTRIENT_KEYS}
+    if all(value is None for value in readings.values()):
+        raise HTTPException(status_code=502, detail="invalid response from model")
+    name = data.get("name") or data.get("food_name") or ""
+    return FoodAnalysis(
+        name=str(name).strip(),
+        quantity=_to_quantity(quantity),
+        nutrients=Nutrients(
+            **{key: value or 0.0 for key, value in readings.items()}
+        ),
+    )

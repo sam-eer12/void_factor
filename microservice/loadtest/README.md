@@ -94,8 +94,11 @@ the number is the work and not the machine. nginx adds a third on top. The 21
 ms/s idle cost is the compose healthcheck starting a Python interpreter every
 ten seconds.
 
-Gating behaves as configured: no `X-User-Id` → 400, forged token → 401, valid
-pair → 200, and a single user past its allowance → 429.
+Gating behaves as configured, and the probe now exits non-zero when it does not
+— CI runs it as the `stack` job: no credentials → 401, forged token → 401 (with
+or without a spoofed `X-Verified-Uid`), a non-image → 415, a 13 MB body → 413,
+valid pair → 200, twelve requests carrying a *borrowed* uid → all 401, and the
+victim of those twelve still getting their full burst before 429.
 
 ## The ceiling was nginx, not the service
 
@@ -150,6 +153,16 @@ Two things this run shows that the first one could not:
 The 1,336/s figure is a floor on what the stack can do, not a ceiling: the load
 generator ran on the same four cores and took about half of them. Repeat this on
 the deployment target, where nothing else is competing.
+
+### Since the rate limit moved behind a verified uid
+
+The figures above predate `nginx/api_http.conf`. An `/api/` request now makes an
+`auth_request` subrequest to `/internal/verify` and passes through a loopback
+limiter hop before reaching a replica, so it holds four nginx connections rather
+than two and verifies its token twice. `worker_connections` went to 8192 so the
+in-flight ceiling stays where it was. A short run on a two-core Podman VM —
+48 in flight, provider stubbed at 300 ms — served 133 rps, all 200, p50 349 ms:
+under 50 ms added. The table has not been re-measured at four figures.
 
 ## How robust is it
 

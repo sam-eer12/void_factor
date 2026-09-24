@@ -10,6 +10,11 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+# The smallest thing the upload check accepts as a JPEG: its start-of-image
+# marker. Nothing downstream decodes it — the providers are stubbed — so the rest
+# is filler.
+JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 16
+
 PROJECT_ID = "test-project"
 ISSUER = f"https://securetoken.google.com/{PROJECT_ID}"
 UID = "u1"

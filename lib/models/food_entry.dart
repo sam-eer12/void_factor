@@ -42,10 +42,11 @@ class Nutrients {
 
   /// Reads the microservice's snake_case response.
   ///
-  /// `parsing.py:normalize()` builds its nutrients map with `nutrients.get(...)`,
-  /// which emits `null` for anything the model omitted, so every field coerces
-  /// `null` to `0`. The user sees the zero in the editable form and can correct
-  /// it before saving.
+  /// The service's contract (`schemas.py`) sends four non-negative numbers,
+  /// with anything the model omitted already turned into `0`. Nulls are still
+  /// coerced to `0` here rather than trusted away, so a response from an older
+  /// deployment reads the same way. The user sees the zero in the editable form
+  /// and can correct it before saving.
   factory Nutrients.fromApi(Map<String, dynamic> map) => Nutrients(
         calories: _toDouble(map['calories']),
         proteinG: _toDouble(map['protein_g']),

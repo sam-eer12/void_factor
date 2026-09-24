@@ -11,11 +11,11 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
 from app.main import app
-from tests.conftest import ISSUER, PROJECT_ID, UID
+from tests.conftest import ISSUER, JPEG, PROJECT_ID, UID
 
 client = TestClient(app)
 
-IMAGE = {"image": ("food.jpg", b"x", "image/jpeg")}
+IMAGE = {"image": ("food.jpg", JPEG, "image/jpeg")}
 
 
 def _post(headers):
@@ -93,7 +93,7 @@ def test_unconfigured_project_fails_closed(monkeypatch, mint):
 def test_a_valid_token_reaches_the_provider(monkeypatch, auth_headers):
     """The happy path stops at the provider call, proving auth let it through."""
 
-    async def _sentinel(api_key_header, image_bytes):
+    async def _sentinel(api_key_header, image_bytes, mime_type):
         raise RuntimeError("provider reached")
 
     monkeypatch.setattr("app.routes.call_gemini", _sentinel)

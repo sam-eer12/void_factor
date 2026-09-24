@@ -41,11 +41,11 @@ typedef FoodAnalysis = ({String name, Nutrients nutrients, double quantity});
 
 /// Posts a photo to the analysis microservice and returns what it recognised.
 ///
-/// The microservice fronts three providers behind nginx. nginx rate-limits on
-/// `X-User-Id` (10 requests/min per user) and rejects a request without it, so
-/// every call carries the signed-in uid. The uid is not what authorizes the
-/// call — FastAPI verifies the bearer token — but nginx cannot verify a JWT, so
-/// it needs a cheap key of its own.
+/// The microservice fronts three providers behind nginx, which rate-limits
+/// each user to 10 requests/min. The bearer token is what identifies the user
+/// for that limit and what authorizes the call: nginx has FastAPI verify it
+/// before counting the request. `X-User-Id` still travels alongside, and
+/// FastAPI refuses the pair unless it names the token's own subject.
 ///
 /// A user may have a key for more than one of those providers. The store hands
 /// them over already ordered — the one they nominated first — and [analyze]
@@ -77,6 +77,10 @@ class FoodAnalysisClient {
   static const String errorSessionExpired = 'SESSION EXPIRED — SIGN IN AGAIN';
   static const String errorServiceNotReady =
       'ANALYSIS SERVICE NOT READY — TRY AGAIN LATER';
+  static const String errorPhotoTooLarge =
+      'PHOTO TOO LARGE — TRY A SMALLER ONE';
+  static const String errorProviderCannotReadPhoto =
+      "THIS PROVIDER CAN'T READ THAT PHOTO — TRY A JPEG";
 
   FoodAnalysisClient({
     http.Client? httpClient,
@@ -168,8 +172,8 @@ class FoodAnalysisClient {
       throw const FoodAnalysisException(errorUnreachable);
     }
     if (caller == null || caller.uid.isEmpty) {
-      // nginx answers a missing X-User-Id with a bare 400, which would surface
-      // as a provider failure and send the user to check their key for nothing.
+      // Without a user there is no token to send, and the request could only
+      // come back 401 — spending a round trip to learn what is known here.
       throw const FoodAnalysisException(errorSignedOut);
     }
 
@@ -212,6 +216,9 @@ class FoodAnalysisClient {
   static bool _isWorthAnotherProvider(String message) =>
       message == errorKeyRejected ||
       message == errorProviderFailed ||
+      // A real photo in a format this provider does not take (HEIC, to an
+      // OpenAI-compatible one). Gemini reads it, so the next key may well.
+      message == errorProviderCannotReadPhoto ||
       // Not a failure of the request at all: this build does not recognise the
       // stored provider, so there was never anything to try for it. The next
       // one may be perfectly fine.
@@ -232,9 +239,9 @@ class FoodAnalysisClient {
         http.MultipartRequest('POST', Uri.parse('$_baseUrl/api/v1/$slug'))
           ..headers[keyHeaderName(credentials.provider)] = credentials.key
           ..headers['X-User-Id'] = caller.uid
-          // What actually authorizes the call. nginx keys its rate limit on the
-          // header above; FastAPI verifies this and rejects the pair if the
-          // token's subject is not that uid.
+          // What actually authorizes the call, and whose subject nginx keys its
+          // rate limit on once FastAPI has verified it. FastAPI also rejects
+          // the pair if the token's subject is not the uid above.
           ..headers['Authorization'] = 'Bearer ${caller.idToken}'
           // Field name is fixed by routes.py: `image: UploadFile = File(...)`.
           ..files.add(http.MultipartFile.fromBytes('image', bytes,
@@ -305,8 +312,19 @@ class FoodAnalysisClient {
   String _messageForFailure(int status, String body) {
     // nginx, not the microservice: limit_req_status 429.
     if (status == 429) return errorRateLimit;
+    // From nginx's body cap (an HTML page) or the service's own
+    // (`image: too large`). Either way no provider could take it.
+    if (status == 413) return errorPhotoTooLarge;
 
     final detail = _detailOf(body);
+
+    // Everything images.py rejects carries an `image:` prefix: the upload was
+    // refused before any provider saw it, so the key is not at fault.
+    if (detail.startsWith('image:')) {
+      return detail == 'image: format not supported by this provider'
+          ? errorProviderCannotReadPhoto
+          : errorUnreadablePhoto;
+    }
 
     // Everything auth.py rejects carries an `auth:` prefix. Without this the
     // two meanings of 401 collapse and a user whose login expired is told to

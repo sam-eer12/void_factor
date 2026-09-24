@@ -6,6 +6,7 @@ from httpx import Response
 
 from app.auth import verify_caller
 from app.main import app
+from tests.conftest import JPEG
 
 
 client = TestClient(app)
@@ -68,7 +69,7 @@ def test_gemini_returns_standard_shape(monkeypatch):
     resp = client.post(
         "/api/v1/gemini",
         headers={"X-Gemini-Key": "test", "X-User-Id": "u1"},
-        files={"image": ("food.jpg", b"fakebytes", "image/jpeg")},
+        files={"image": ("food.jpg", JPEG, "image/jpeg")},
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -82,7 +83,7 @@ def test_gemini_missing_key_returns_401(monkeypatch):
     resp = client.post(
         "/api/v1/gemini",
         headers={"X-User-Id": "u1"},
-        files={"image": ("food.jpg", b"x", "image/jpeg")},
+        files={"image": ("food.jpg", JPEG, "image/jpeg")},
     )
     assert resp.status_code == 401
 
@@ -92,7 +93,7 @@ def test_gemini_bad_json_returns_502(monkeypatch):
     resp = client.post(
         "/api/v1/gemini",
         headers={"X-Gemini-Key": "test", "X-User-Id": "u1"},
-        files={"image": ("food.jpg", b"x", "image/jpeg")},
+        files={"image": ("food.jpg", JPEG, "image/jpeg")},
     )
     assert resp.status_code == 502
 
@@ -105,7 +106,7 @@ def test_openrouter_success():
     resp = client.post(
         "/api/v1/openrouter",
         headers={"X-OpenRouter-Key": "test", "X-User-Id": "u1"},
-        files={"image": ("food.jpg", b"fakebytes", "image/jpeg")},
+        files={"image": ("food.jpg", JPEG, "image/jpeg")},
     )
     assert resp.status_code == 200
     assert resp.json()["name"] == "Banana"
@@ -117,7 +118,7 @@ def test_openrouter_missing_key_returns_401(monkeypatch):
     resp = client.post(
         "/api/v1/openrouter",
         headers={"X-User-Id": "u1"},
-        files={"image": ("food.jpg", b"x", "image/jpeg")},
+        files={"image": ("food.jpg", JPEG, "image/jpeg")},
     )
     assert resp.status_code == 401
 
@@ -128,7 +129,7 @@ def test_openrouter_provider_error_returns_502():
     resp = client.post(
         "/api/v1/openrouter",
         headers={"X-OpenRouter-Key": "test", "X-User-Id": "u1"},
-        files={"image": ("food.jpg", b"x", "image/jpeg")},
+        files={"image": ("food.jpg", JPEG, "image/jpeg")},
     )
     assert resp.status_code == 502
 
@@ -141,7 +142,7 @@ def test_nvidia_success():
     resp = client.post(
         "/api/v1/nvidia",
         headers={"X-Nvidia-Key": "test", "X-User-Id": "u1"},
-        files={"image": ("food.jpg", b"fakebytes", "image/jpeg")},
+        files={"image": ("food.jpg", JPEG, "image/jpeg")},
     )
     assert resp.status_code == 200
     assert resp.json()["nutrients"]["protein_g"] == 1.3
@@ -157,7 +158,7 @@ def test_nvidia_missing_key_returns_401(monkeypatch):
     resp = client.post(
         "/api/v1/nvidia",
         headers={"X-User-Id": "u1"},
-        files={"image": ("food.jpg", b"x", "image/jpeg")},
+        files={"image": ("food.jpg", JPEG, "image/jpeg")},
     )
     assert resp.status_code == 401
 
@@ -166,9 +167,9 @@ def test_normalize_flat_shape():
     from app.parsing import normalize
     out = normalize({"food_name": "Apple", "calories": 95, "protein_g": 0.5,
                      "carbs_g": 25, "fats_g": 0.3})
-    assert out["name"] == "Apple"
-    assert out["nutrients"]["calories"] == 95
-    assert set(out["nutrients"]) == {"calories", "protein_g", "carbs_g", "fats_g"}
+    assert out.name == "Apple"
+    assert out.nutrients.calories == 95
+    assert set(out.nutrients.model_dump()) == {"calories", "protein_g", "carbs_g", "fats_g"}
 
 
 def test_normalize_non_dict_raises_502():
@@ -189,7 +190,7 @@ def test_openrouter_non_dict_json_returns_502():
     resp = client.post(
         "/api/v1/openrouter",
         headers={"X-OpenRouter-Key": "test", "X-User-Id": "u1"},
-        files={"image": ("food.jpg", b"x", "image/jpeg")},
+        files={"image": ("food.jpg", JPEG, "image/jpeg")},
     )
     assert resp.status_code == 502
 
@@ -203,7 +204,7 @@ def test_openrouter_non_json_200_returns_502():
     resp = client.post(
         "/api/v1/openrouter",
         headers={"X-OpenRouter-Key": "test", "X-User-Id": "u1"},
-        files={"image": ("food.jpg", b"x", "image/jpeg")},
+        files={"image": ("food.jpg", JPEG, "image/jpeg")},
     )
     assert resp.status_code == 502
 
@@ -225,7 +226,7 @@ def test_response_carries_the_serving_count(monkeypatch):
     resp = client.post(
         "/api/v1/gemini",
         headers={"X-Gemini-Key": "test", "X-User-Id": "u1"},
-        files={"image": ("food.jpg", b"fakebytes", "image/jpeg")},
+        files={"image": ("food.jpg", JPEG, "image/jpeg")},
     )
     body = resp.json()
     assert body["quantity"] == 3
@@ -241,14 +242,14 @@ def test_response_defaults_the_count_to_one(monkeypatch):
     resp = client.post(
         "/api/v1/gemini",
         headers={"X-Gemini-Key": "test", "X-User-Id": "u1"},
-        files={"image": ("food.jpg", b"fakebytes", "image/jpeg")},
+        files={"image": ("food.jpg", JPEG, "image/jpeg")},
     )
     assert resp.json()["quantity"] == 1.0
 
 
 def test_normalize_reads_the_count():
     from app.parsing import normalize
-    assert normalize({"name": "Samosa", "quantity": 3})["quantity"] == 3.0
+    assert normalize({"name": "Samosa", "calories": 100, "quantity": 3}).quantity == 3.0
 
 
 def test_normalize_reads_a_count_the_model_named_differently():
@@ -256,13 +257,13 @@ def test_normalize_reads_a_count_the_model_named_differently():
     # The prompt asks for `quantity`; a model that answers `servings` or `count`
     # has still counted the plate, and dropping that to 1 would silently third
     # the user's calories.
-    assert normalize({"name": "Samosa", "servings": 2})["quantity"] == 2.0
-    assert normalize({"name": "Samosa", "count": 4})["quantity"] == 4.0
+    assert normalize({"name": "Samosa", "calories": 100, "servings": 2}).quantity == 2.0
+    assert normalize({"name": "Samosa", "calories": 100, "count": 4}).quantity == 4.0
 
 
 def test_normalize_defaults_a_missing_count_to_one():
     from app.parsing import normalize
-    assert normalize({"name": "Banana"})["quantity"] == 1.0
+    assert normalize({"name": "Banana", "calories": 105}).quantity == 1.0
 
 
 def test_normalize_defaults_an_unusable_count_to_one():
@@ -270,12 +271,12 @@ def test_normalize_defaults_an_unusable_count_to_one():
     # The nutrients still describe one serving, so a nonsense count costs the
     # multiplier rather than the reading.
     for bad in (None, 0, -2, "lots", "", [3], float("nan"), float("inf")):
-        assert normalize({"name": "Banana", "quantity": bad})["quantity"] == 1.0
+        assert normalize({"name": "Banana", "calories": 100, "quantity": bad}).quantity == 1.0
 
 
 def test_normalize_accepts_a_count_sent_as_a_string():
     from app.parsing import normalize
-    assert normalize({"name": "Samosa", "quantity": "3"})["quantity"] == 3.0
+    assert normalize({"name": "Samosa", "calories": 100, "quantity": "3"}).quantity == 3.0
 
 
 def test_prompt_asks_for_per_serving_figures_and_a_count():

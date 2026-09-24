@@ -1,48 +1,33 @@
-import httpx
 from google import genai
 from google.genai import types
 from fastapi import HTTPException
 
-from app import config
+from app import config, http_pool, images
 from app.parsing import parse_model_json, normalize
+from app.schemas import FoodAnalysis
 
 
-# One connection pool to Google per worker process, shared by every request.
-#
-# The SDK builds its own httpx.AsyncClient for each genai.Client it is not given
-# one for, which — with a client per call, below — would mean a fresh TLS
-# handshake to Google on every analysis and a pool left to be closed by
-# __del__, which only runs if garbage collection happens to fire inside a live
-# event loop. Handing the SDK a client also stops it closing one it does not
-# own: BaseApiClient.aclose skips a caller-supplied client deliberately, so the
-# pool's lifetime is ours to manage (see aclose below).
-#
-# Pooling across callers is safe even though the key differs per request: the
-# key travels as a request header, not as a property of the connection.
-#
-# 60s to match the other providers, and to stay inside nginx's 90s read timeout
-# so a slow call is cut off here rather than by the proxy.
-_http_client = httpx.AsyncClient(timeout=60)
-
-# The SDK copies this rather than holding the instance, so one shared object
-# cannot be mutated by one caller into another caller's client.
-_HTTP_OPTIONS = types.HttpOptions(httpx_async_client=_http_client)
-
-
-async def aclose() -> None:
-    """Releases the shared pool. Wired to app shutdown in app/main.py."""
-    await _http_client.aclose()
-
-
-async def call_gemini(api_key_header: str | None, image_bytes: bytes) -> dict:
+async def call_gemini(
+    api_key_header: str | None, image_bytes: bytes, mime_type: str
+) -> FoodAnalysis:
     api_key = api_key_header or config.DEV_GEMINI_KEY
     if not api_key:
         raise HTTPException(status_code=401, detail="Gemini API Key missing")
+    images.require_one_of(mime_type, images.SUPPORTED)
 
     # A client per call rather than a module-level one: the key comes from the
     # caller, so there is no single client to reuse across users. It costs no
-    # sockets, being a thin wrapper over the shared pool above.
-    client = genai.Client(api_key=api_key, http_options=_HTTP_OPTIONS)
+    # sockets, being a thin wrapper over the shared pool (app/http_pool.py).
+    #
+    # Without a client handed in, the SDK builds its own httpx pool per
+    # genai.Client — a fresh TLS handshake to Google on every analysis, and a
+    # pool left for __del__ to close. Handing it ours also stops it closing one
+    # it does not own: BaseApiClient.aclose skips a caller-supplied client
+    # deliberately, so the pool's lifetime is the app's to manage.
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(httpx_async_client=http_pool.client()),
+    )
     try:
         # The async entry point, not models.generate_content. The synchronous
         # one blocks the event loop for the whole provider round trip, so a
@@ -52,7 +37,7 @@ async def call_gemini(api_key_header: str | None, image_bytes: bytes) -> dict:
             model=config.GEMINI_MODEL,
             contents=[
                 config.PROMPT,
-                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
             ],
         )
         raw_text = response.text

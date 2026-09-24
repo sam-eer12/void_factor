@@ -72,13 +72,31 @@ what you want while confirming the plumbing.
 Verify:
 
 ```sh
-curl -sS https://$APP_HOSTNAME/health                      # {"status":"healthy"}
-curl -sS -o /dev/null -w '%{http_code}\n' \
-     -X POST https://$APP_HOSTNAME/api/v1/gemini           # 400 — no X-User-Id
+sh verify-live.sh "$APP_HOSTNAME"
 ```
 
-A `400` there is success: it proves TLS terminated, nginx routed, and the
-rate-limit guard is live.
+It checks, from the outside and without credentials: `/health` over a trusted
+certificate, HSTS, the HTTP→HTTPS redirect, an unauthenticated scan refused by
+the edge with `auth:` JSON, a spoofed `X-Verified-Uid` buying nothing, and
+`/internal/verify` not being reachable. Run it from your laptop too — a check
+that only passes on the box itself has not tested the firewall.
+
+A `503` with `auth:` means the verifier is not answering: usually an unset
+`FIREBASE_PROJECT_ID`.
+
+**Check that nginx sees real client addresses.** The per-address limit keys on
+them, and some container engines' port forwarding replaces every client with
+the bridge gateway. That is safe by construction — private addresses are exempt,
+so it degrades to no per-address limit rather than one shared limit for everyone
+— but it is a limit you then do not have. After a request from your laptop:
+
+```sh
+docker-compose -f docker-compose.prod.yml logs nginx | tail -3
+```
+
+The client address on the request line should be your public IP, not a
+`10.x`/`172.x` one. Rootful Docker and rootful Podman preserve it; rootless
+engines often do not.
 
 ## 5. Boot persistence
 
@@ -120,8 +138,4 @@ docker-compose -f docker-compose.prod.yml run --rm certbot renew --dry-run
 
 - **No per-day quota.** nginx limits per minute only. A hard daily cap needs
   Redis or Lua.
-- **The rate-limit bucket is forgeable.** nginx keys on `X-User-Id` before
-  FastAPI verifies anything, so a caller varying that header gets fresh buckets.
-  They still cannot reach a provider — the bearer token is checked — so the cost
-  is bandwidth, not quota.
 - **No horizontal scaling.** One box, one nginx, in-memory rate-limit state.

@@ -5,10 +5,9 @@ Google's public keys and the project id — both public — so this deliberately
 does not use `firebase-admin`, which would require a service-account JSON on the
 server: a real credential to provision, rotate and leak, for no security gain.
 
-What this buys and what it does not: a forged `X-User-Id` can no longer reach a
-provider. It can still mint a fresh nginx rate-limit bucket, because nginx keys
-on that header before FastAPI ever sees the request. Authorization is enforced;
-the bucket is not. See the design doc for why that residue is accepted.
+A forged `X-User-Id` cannot reach a provider, and since nginx now verifies
+through /internal/verify before counting a request (nginx/api_http.conf), it
+cannot reach a rate-limit bucket either.
 """
 from fastapi import Header, HTTPException
 import jwt
@@ -83,9 +82,10 @@ async def verify_caller(
 ) -> str:
     """FastAPI dependency guarding every `/api/` route. Returns the caller's uid.
 
-    Both headers are required. `X-User-Id` is nginx's rate-limit key and is
-    always set in production; requiring it here means a caller who reaches the
-    service directly gets no further than one arriving through the proxy.
+    Both headers are required. nginx no longer keys on `X-User-Id` — it limits
+    on the uid this returns — but the client always sends it, and requiring it
+    to match keeps a caller who reaches the service directly to the same rule
+    as one arriving through the proxy.
     """
     if not config.FIREBASE_PROJECT_ID:
         # Checked before the headers so a misconfigured deploy reports itself as

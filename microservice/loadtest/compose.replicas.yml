@@ -50,6 +50,7 @@ services:
     volumes:
       - ./nginx.replicas.conf:/etc/nginx/nginx.conf:ro
       - ../../nginx/api_locations.conf:/etc/nginx/api_locations.conf:ro
+      - ../../nginx/api_http.conf:/etc/nginx/api_http.conf:ro
     depends_on:
       microservice-1:
         condition: service_healthy

@@ -43,6 +43,7 @@ services:
       PROBE_DURATION: "${PROBE_DURATION:-20}"
       PROBE_UIDS_PER_CONN: "${PROBE_UIDS_PER_CONN:-16}"
       PROBE_SHARDS: "${PROBE_SHARDS:-2}"
+      PROBE_OVERSIZE: "${PROBE_OVERSIZE:-0}"
       PROBE_OUT: /results/stack.json
     networks:
       - internal

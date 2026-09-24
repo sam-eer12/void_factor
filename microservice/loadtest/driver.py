@@ -13,7 +13,7 @@ much less per request than the thing it is measuring, or it measures itself.
 
 Every virtual user carries its own Firebase-shaped token and its own
 `X-User-Id`, because production traffic is many users rather than one, and
-because nginx's rate limit keys on that header.
+because nginx's rate limit keys on the uid that token verifies as.
 """
 import asyncio
 import multiprocessing as mp
