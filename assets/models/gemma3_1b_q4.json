@@ -1,0 +1,9 @@
+{
+  "version": "gemma3-1b-it-q4-ekv4096-2ad0cdf5",
+  "filename": "Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
+  "source_repository": "litert-community/Gemma3-1B-IT",
+  "source_revision": "2ad0cdf5e31fd96eaa08cc6a3242539461e5a42f",
+  "size_bytes": 584417280,
+  "sha256": "1325ae366d31950f137c9c357b9fa89448b176d76998180c08ceaca78bba98be",
+  "terms_version": "2026-04-01"
+}

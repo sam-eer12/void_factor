@@ -11,10 +11,11 @@ import '../food_log/api_credentials.dart';
 import '../health/health_repository.dart';
 import '../profile/profile_repository.dart';
 import '../projection/hf_token_store.dart';
+import '../projection/model_download_service.dart';
 
 class SessionService {
   SessionService(this._profileRepository, [ApiCredentialStore? credentials])
-      : _credentials = credentials ?? SecureApiCredentialStore();
+    : _credentials = credentials ?? SecureApiCredentialStore();
 
   final ProfileRepository _profileRepository;
 
@@ -47,16 +48,18 @@ class SessionService {
 
   // Clear all session storage (on logout)
   Future<void> clearSession() async {
+    try {
+      await sharedModelDownloadService.clearPending();
+    } catch (e) {
+      debugPrint('Pending model transfer cleanup failed: $e');
+      // Next account's first model check also reconciles ownership.
+    }
     await _secureStorage.delete(key: _sessionIdKey);
     await _secureStorage.delete(key: _lastActivityKey);
     await _secureStorage.delete(key: _profileCompletedKey);
     await _credentials.deleteAll();
-    // The model token is this user's HuggingFace credential, so it leaves with
-    // them — on a shared device the next user must not be able to download
-    // against it. The downloaded model file itself deliberately stays: it holds
-    // nothing personal, and re-fetching half a gigabyte per login would be
-    // hostile.
-    await _secureStorage.delete(key: HuggingFaceTokenStore.tokenKey);
+    // Erase any token retained from the old direct Hugging Face download flow.
+    await _secureStorage.delete(key: legacyHuggingFaceTokenKey);
     // Drop cached health data + the connection flag so the next user starts
     // disconnected and can't read the prior user's metrics. Named via the
     // repository's constants rather than repeated literals — four copies of a
@@ -64,7 +67,9 @@ class SessionService {
     await _secureStorage.delete(key: HealthRepository.metricsKey);
     await _secureStorage.delete(key: HealthRepository.enabledKey);
     await _secureStorage.delete(key: HealthRepository.energyWindowKey);
-    await _secureStorage.delete(key: HealthRepository.authorizedTypesVersionKey);
+    await _secureStorage.delete(
+      key: HealthRepository.authorizedTypesVersionKey,
+    );
     // Drop the mirrored profile blob so the next user can't read stale data.
     await _profileRepository.clearLocal();
   }
@@ -123,10 +128,16 @@ class SessionService {
     // 2. Fetch the user profile and session ID from Firestore
     DocumentSnapshot<Map<String, dynamic>> doc;
     try {
-      doc = await _db.collection('users').doc(uid).get().timeout(const Duration(seconds: 15));
+      doc = await _db
+          .collection('users')
+          .doc(uid)
+          .get()
+          .timeout(const Duration(seconds: 15));
     } catch (e) {
       // Network error or fetch failed, fallback to local caching if valid
-      final localProfileCompleted = await _secureStorage.read(key: _profileCompletedKey);
+      final localProfileCompleted = await _secureStorage.read(
+        key: _profileCompletedKey,
+      );
       if (localProfileCompleted == 'true') {
         return 'dashboard';
       }
@@ -167,10 +178,15 @@ class SessionService {
       // Generate a new session ID
       final newSessionId = _generateSessionId();
       await _secureStorage.write(key: _sessionIdKey, value: newSessionId);
-      await _secureStorage.write(key: _lastActivityKey, value: now.toIso8601String());
+      await _secureStorage.write(
+        key: _lastActivityKey,
+        value: now.toIso8601String(),
+      );
 
       // Update Firestore with the new session ID
-      await _db.collection('users').doc(uid).update({'sessionId': newSessionId});
+      await _db.collection('users').doc(uid).update({
+        'sessionId': newSessionId,
+      });
     } else {
       // Local session exists. Check if it matches the remote session ID
       if (remoteSessionId == null || remoteSessionId != localSessionId) {
@@ -179,7 +195,10 @@ class SessionService {
         return 'login';
       }
       // Renew inactivity timer locally
-      await _secureStorage.write(key: _lastActivityKey, value: now.toIso8601String());
+      await _secureStorage.write(
+        key: _lastActivityKey,
+        value: now.toIso8601String(),
+      );
     }
 
     // Reconcile the profile schema: mirror it locally and, if the document
@@ -209,13 +228,14 @@ class SessionService {
 
     // 1. Establish session + creation metadata via a merge write so it composes
     //    with the profile write below without either clobbering the other.
-    await _db.collection('users').doc(uid).set(
-      {
-        'sessionId': newSessionId,
-        'createdAt': now.toIso8601String(),
-      },
-      SetOptions(merge: true),
-    ).timeout(const Duration(seconds: 15));
+    await _db
+        .collection('users')
+        .doc(uid)
+        .set({
+          'sessionId': newSessionId,
+          'createdAt': now.toIso8601String(),
+        }, SetOptions(merge: true))
+        .timeout(const Duration(seconds: 15));
 
     // 2. Persist the profile (Firestore merge + local blob) via the repository.
     //    New goal/diet fields take their defaults; onboarding only collects the
@@ -236,12 +256,16 @@ class SessionService {
     // Through the store, so the key lands in its provider's own slot and that
     // provider becomes the one scans start with. Onboarding collects one key;
     // Settings is where the other two get added behind it as fallbacks.
-    await _credentials
-        .write(ApiCredentials(provider: apiProvider, key: apiKey));
+    await _credentials.write(
+      ApiCredentials(provider: apiProvider, key: apiKey),
+    );
 
     // 4. Session bookkeeping.
     await _secureStorage.write(key: _sessionIdKey, value: newSessionId);
-    await _secureStorage.write(key: _lastActivityKey, value: now.toIso8601String());
+    await _secureStorage.write(
+      key: _lastActivityKey,
+      value: now.toIso8601String(),
+    );
     await _secureStorage.write(key: _profileCompletedKey, value: 'true');
   }
 }

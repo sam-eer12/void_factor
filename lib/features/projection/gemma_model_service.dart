@@ -1,23 +1,24 @@
 import 'dart:async';
 
-import 'package:background_downloader/background_downloader.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'gemma_engine.dart';
-import 'hf_token_store.dart';
+import 'model_artifact.dart';
+import 'model_download_link.dart';
+import 'model_download_service.dart';
 
 /// Where the on-device model stands.
 enum GemmaModelStage {
-  /// No token saved, so the download cannot even be attempted.
-  needsToken,
-
-  /// Token present, model absent.
   notInstalled,
 
   /// Download in flight — see [GemmaModelState.progress].
   downloading,
+
+  /// The bytes are complete and their digest is being checked.
+  verifying,
 
   /// Installed and usable.
   ready,
@@ -28,11 +29,7 @@ enum GemmaModelStage {
 
 /// The model's state as the screen renders it.
 class GemmaModelState {
-  const GemmaModelState({
-    required this.stage,
-    this.progress = 0,
-    this.message,
-  });
+  const GemmaModelState({required this.stage, this.progress = 0, this.message});
 
   final GemmaModelStage stage;
 
@@ -43,7 +40,9 @@ class GemmaModelState {
   final String? message;
 
   bool get isReady => stage == GemmaModelStage.ready;
-  bool get isBusy => stage == GemmaModelStage.downloading;
+  bool get isBusy =>
+      stage == GemmaModelStage.downloading ||
+      stage == GemmaModelStage.verifying;
 }
 
 /// Everything this feature needs from `flutter_gemma`, behind one seam.
@@ -63,9 +62,9 @@ abstract class GemmaGateway {
   /// Downloads and installs the model — and, where it is delivered on its own,
   /// the engine that runs it — reporting 0–100 through [onProgress].
   Future<void> install({
-    required String url,
-    required String? token,
+    required ModelArtifact artifact,
     required void Function(int progress) onProgress,
+    required void Function() onVerifying,
   });
 
   /// One-shot generation. Opens a session, asks, closes.
@@ -97,13 +96,17 @@ class GemmaStorageException implements Exception {
 
 class FlutterGemmaGateway implements GemmaGateway {
   FlutterGemmaGateway({
-    required HuggingFaceTokenStore tokenStore,
     GemmaEngine? engine,
-  })  : _tokenStore = tokenStore,
-        _engine = engine ?? PlatformGemmaEngine();
+    ModelDownloadService? downloads,
+    ModelDownloadLinkClient? links,
+  }) : _engine = engine ?? PlatformGemmaEngine(),
+       _downloads = downloads ?? sharedModelDownloadService,
+       _links = links ?? ModelDownloadLinkClient();
 
-  final HuggingFaceTokenStore _tokenStore;
   final GemmaEngine _engine;
+  final ModelDownloadService _downloads;
+  final ModelDownloadLinkClient _links;
+  String? _registeredOwnedPath;
 
   /// The model, and the exact file within its repository.
   ///
@@ -113,20 +116,11 @@ class FlutterGemmaGateway implements GemmaGateway {
   /// context is ~0.5 GB — the smallest bundle that comfortably fits the prompt
   /// this feature sends.
   ///
-  /// Overridable at construction so a wrong or withdrawn filename is a setting
-  /// the user can fix, not a dead end requiring an app update.
-  static const String defaultModelUrl =
-      'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/'
-      'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
-
-  /// What [defaultModelUrl] weighs, near enough to plan around.
-  static const int modelBytes = 584 * 1024 * 1024;
-
   /// The model, the engine beside it once installed (~52 MB), and headroom for
   /// the filesystem. Checked before a download starts, because a download that
   /// fills the disk fails near the end — after the user has waited for most of
   /// half a gigabyte.
-  static const int requiredFreeBytes = modelBytes + 128 * 1024 * 1024;
+  static const int storageHeadroomBytes = 128 * 1024 * 1024;
 
   /// Context window. The narrator's prompt is a few hundred tokens and its reply
   /// is capped far below this; 1024 is headroom, not a target, and a larger
@@ -178,25 +172,7 @@ class FlutterGemmaGateway implements GemmaGateway {
   }
 
   Future<void> _initialize() async {
-    // Passed here for the paths that carry no token of their own. The plugin
-    // prefers a per-download token over this one and [install] always passes its
-    // own, so a token saved *after* this has run still reaches the request —
-    // which is why nothing re-initializes when the token changes. Resetting the
-    // plugin's registry to pick up a new token would drop the singleton the
-    // download service lives on, orphaning any transfer already in flight.
-    await FlutterGemma.initialize(huggingFaceToken: await _tokenStore.read());
-
-    // Without a `running` notification the downloader ignores foreground mode
-    // outright — its documentation is explicit that the setting has no effect
-    // unless one is configured — and the transfer then dies at Android's
-    // nine-minute limit for background work. `flutter_gemma` configures none of
-    // its own, so this is what makes [install]'s `foreground: true` real.
-    FileDownloader().configureNotification(
-      running: const TaskNotification('DOWNLOADING ON-DEVICE MODEL', '{progress}'),
-      complete: const TaskNotification('ON-DEVICE MODEL READY', ''),
-      error: const TaskNotification('MODEL DOWNLOAD FAILED', ''),
-      progressBar: true,
-    );
+    await FlutterGemma.initialize();
   }
 
   @override
@@ -211,14 +187,25 @@ class FlutterGemmaGateway implements GemmaGateway {
       // which skips the model it already has and fetches only the engine.
       if (!await _engine.isInstalled()) return false;
       await _ensureInitialized();
-      // Deliberately not widened to "some file is on disk". The plugin
-      // rehydrates the active model on init, and a file present *without* an
-      // active spec is precisely the state in which `getActiveModel` throws —
-      // so answering yes here would only move the failure to generation time,
-      // where the user sees it as broken recommendations instead of a model
-      // that needs installing. Re-running [install] is the supported repair:
-      // it is idempotent, skips the download, and sets the active model.
-      return FlutterGemma.hasActiveModel();
+      final artifact = await ModelArtifact.bundled();
+      final ownedFile = await _downloads.finalFile(artifact);
+      if (await ownedFile.exists()) {
+        if (!await _downloads.verify(ownedFile, artifact)) return false;
+        // flutter_gemma 0.16.4 restores its default directory on launch, not
+        // this external path. Re-register the verified app-owned file offline.
+        if (_registeredOwnedPath != ownedFile.path) {
+          await _registerFile(ownedFile.path);
+        }
+      }
+      if (!FlutterGemma.hasActiveModel()) return false;
+      // A legacy install has a plugin-owned file rather than the new app-owned
+      // file. Loading the registered model checks that either path is usable;
+      // hasActiveModel() alone only checks metadata.
+      await _engine.ensureLoaded();
+      await _serialized(() async {
+        await _warmModel();
+      });
+      return true;
     } catch (e) {
       debugPrint('Gemma readiness check failed: $e');
       return false;
@@ -227,18 +214,29 @@ class FlutterGemmaGateway implements GemmaGateway {
 
   @override
   Future<void> install({
-    required String url,
-    required String? token,
+    required ModelArtifact artifact,
     required void Function(int progress) onProgress,
+    required void Function() onVerifying,
   }) async {
     await _ensureInitialized();
-
-    final modelPresent = await FlutterGemma.isModelInstalled(_fileNameOf(url));
+    final ownedFile = await _downloads.finalFile(artifact);
+    final manager = FlutterGemmaPlugin.instance.modelManager;
+    final legacy = manager.activeInferenceModel;
+    final modelPresent =
+        await _downloads.verify(ownedFile, artifact) ||
+        (legacy != null && await manager.isModelInstalled(legacy));
     if (!modelPresent) {
-      final free = await _engine.freeBytes();
-      if (free != null && free < requiredFreeBytes) {
-        throw const GemmaStorageException();
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      final pending =
+          uid != null && await _downloads.isTransferring(uid, artifact);
+      if (!pending) {
+        final free = await _engine.freeBytes();
+        if (free != null && free < artifact.sizeBytes + storageHeadroomBytes) {
+          throw const GemmaStorageException();
+        }
       }
+      // Native transfer checks account for remaining bytes on a resumed task.
+      // Requiring a second full model's free space would block a valid resume.
     }
 
     // The engine first, and inside the same progress bar: to the user this is
@@ -247,60 +245,70 @@ class FlutterGemmaGateway implements GemmaGateway {
     // speed throughout.
     var engineShare = 0.0;
     if (!await _engine.isInstalled()) {
-      await _engine.install(onProgress: (downloaded, total) {
-        if (total <= 0) return;
-        engineShare = modelPresent ? 1.0 : total / (total + modelBytes);
-        onProgress((downloaded / total * engineShare * 100).floor());
-      });
+      await _engine.install(
+        onProgress: (downloaded, total) {
+          if (total <= 0) return;
+          engineShare = modelPresent
+              ? 1.0
+              : total / (total + artifact.sizeBytes);
+          onProgress((downloaded / total * engineShare * 100).floor());
+        },
+      );
     }
     final modelBase = engineShare * 100;
 
-    // The foreground service's notification is only *visible* with this
-    // permission — the service, and so the download, runs either way. A refusal
-    // is therefore not a failure, and must not stop the install.
-    try {
-      await FileDownloader().permissions.request(PermissionType.notifications);
-    } catch (e) {
-      debugPrint('Notification permission request failed: $e');
-    }
+    // An older installation may only need the Play engine. Keep its existing
+    // file and registry usable without contacting the model host.
+    if (modelPresent && await isReady()) return;
 
+    // A transfer already streaming does not need another link. In particular,
+    // it can finish while offline after its original 24-hour link expires.
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      throw const ModelDownloadException('SIGN IN TO DOWNLOAD THE MODEL');
+    }
+    final file = await _downloads.download(
+      uid: uid,
+      artifact: artifact,
+      renewLink: () async {
+        final renewed = await _links.request(artifact);
+        if (renewed.uid != uid) {
+          throw const ModelDownloadException(
+            'ACCOUNT CHANGED — RETRY DOWNLOAD',
+          );
+        }
+        return renewed.link;
+      },
+      onProgress: (progress) =>
+          onProgress((modelBase + progress * (1 - engineShare)).floor()),
+      onVerifying: onVerifying,
+    );
+    await _registerFile(file.path);
+    if (!await isReady()) {
+      throw const ModelDownloadException('MODEL INSTALLED BUT COULD NOT START');
+    }
+  }
+
+  Future<void> _registerFile(String path) async {
     await FlutterGemma.installModel(
       modelType: ModelType.gemmaIt,
       fileType: ModelFileType.litertlm,
-    )
-        .fromNetwork(
-          url,
-          token: token,
-          // A foreground service, not a plain work request. The plugin turns off
-          // background_downloader's pause/resume for HuggingFace URLs, whose
-          // weak ETags make resume unreliable, and leaves the task above the
-          // priority that would qualify for user-initiated data transfer — so
-          // foreground mode is the only remaining way past the nine-minute cap.
-          // 584 MB does not reliably arrive inside nine minutes on a phone.
-          foreground: true,
-        )
-        .withProgress(
-          (progress) =>
-              onProgress((modelBase + progress * (1 - engineShare)).floor()),
-        )
-        .install();
+    ).fromFile(path).install();
+    _registeredOwnedPath = path;
   }
 
   @override
   Future<bool> isInstalling() async {
     try {
       if (await _engine.isInstalling()) return true;
-      await _ensureInitialized();
-      final tasks = await FileDownloader().allTasks(allGroups: true);
-      return tasks.any((task) => task.url == defaultModelUrl);
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return false;
+      return _downloads.isTransferring(uid, await ModelArtifact.bundled());
     } catch (e) {
       debugPrint('Gemma download check failed: $e');
       return false;
     }
   }
-
-  /// The model's id in flutter_gemma's registry: the file name the URL ends in.
-  static String _fileNameOf(String url) => Uri.parse(url).pathSegments.last;
 
   @override
   Future<String> generate({
@@ -368,8 +376,7 @@ class FlutterGemmaGateway implements GemmaGateway {
       preferredBackend: preferredBackend,
     );
     _model = model;
-    _observer ??= _GemmaMemoryObserver(() => _serialized(_unload))
-      ..attach();
+    _observer ??= _GemmaMemoryObserver(() => _serialized(_unload))..attach();
     return model;
   }
 
@@ -389,11 +396,16 @@ class FlutterGemmaGateway implements GemmaGateway {
   @override
   Future<void> uninstall() async {
     await _ensureInitialized();
-    // The loaded model maps the very file about to be deleted.
-    await _serialized(_unload);
-    for (final id in await FlutterGemma.listInstalledModels()) {
-      await FlutterGemma.uninstallModel(id);
-    }
+    await _serialized(() async {
+      // Keep generation excluded until both registry and file are gone.
+      await _unload();
+      for (final id in await FlutterGemma.listInstalledModels()) {
+        await FlutterGemma.uninstallModel(id);
+      }
+      await FlutterGemmaPlugin.instance.modelManager.clearModelCache();
+      _registeredOwnedPath = null;
+      await _downloads.remove(await ModelArtifact.bundled());
+    });
     // Nothing left for the engine to run. Play removes it when the app is next
     // in the background; a later download brings it back with the model.
     await _engine.release();
@@ -425,8 +437,13 @@ class _GemmaMemoryObserver with WidgetsBindingObserver {
 
 final gemmaGatewayProvider = Provider<GemmaGateway>((ref) {
   return FlutterGemmaGateway(
-    tokenStore: ref.watch(huggingFaceTokenStoreProvider),
+    downloads: ref.watch(modelDownloadServiceProvider),
+    links: ref.watch(modelDownloadLinkClientProvider),
   );
+});
+
+final modelDownloadServiceProvider = Provider<ModelDownloadService>((ref) {
+  return sharedModelDownloadService;
 });
 
 /// Owns the model's install lifecycle, and nothing about recommendations.
@@ -435,11 +452,9 @@ final gemmaGatewayProvider = Provider<GemmaGateway>((ref) {
 /// and the download only on an explicit tap. Half a gigabyte fetched at launch
 /// would stall startup for a feature the user may never open.
 class GemmaModel extends AsyncNotifier<GemmaModelState> {
-  static const String errorDownloadFailed =
-      'DOWNLOAD FAILED — CHECK TOKEN AND CONNECTION';
+  static const String errorDownloadFailed = 'MODEL DOWNLOAD FAILED — TRY AGAIN';
   static const String errorNetwork =
       'NETWORK CONNECTION ERROR — CHECK YOUR CONNECTION';
-  static const String errorNoToken = 'NO HUGGINGFACE TOKEN';
   static const String errorNoStorage =
       'NOT ENOUGH STORAGE — FREE UP SPACE AND TRY AGAIN';
   static const String errorEngineUnavailable =
@@ -450,8 +465,7 @@ class GemmaModel extends AsyncNotifier<GemmaModelState> {
   /// Both the projections card and the settings screen offer the download, and
   /// a second tap arrives before the first has even read the token. Two
   /// installs would race for one file. Kept on the notifier because Riverpod
-  /// reuses the instance across rebuilds, so it also survives the invalidation
-  /// that saving a token causes mid-download.
+  /// reuses the instance across rebuilds.
   Future<void>? _inFlight;
   int _lastProgress = 0;
 
@@ -459,10 +473,6 @@ class GemmaModel extends AsyncNotifier<GemmaModelState> {
   Future<GemmaModelState> build() async {
     final gateway = ref.watch(gemmaGatewayProvider);
 
-    // Installed wins over token-present. A model already on disk keeps working
-    // even if the user later removes the token — the download it was needed for
-    // is done, and reporting `needsToken` would offer to re-fetch a file that is
-    // already there.
     if (await gateway.isReady()) {
       return const GemmaModelState(stage: GemmaModelStage.ready);
     }
@@ -473,8 +483,7 @@ class GemmaModel extends AsyncNotifier<GemmaModelState> {
         progress: _lastProgress,
       );
     }
-    final token = await ref.watch(huggingFaceTokenStoreProvider).read();
-    if (token != null && await gateway.isInstalling()) {
+    if (await gateway.isInstalling()) {
       // A download that outlived the process that started it — the app was
       // closed or killed partway. Attach to it rather than offer another, so
       // the bar picks up where it was and the model is registered when it
@@ -482,11 +491,7 @@ class GemmaModel extends AsyncNotifier<GemmaModelState> {
       Future.microtask(download);
       return const GemmaModelState(stage: GemmaModelStage.downloading);
     }
-    return GemmaModelState(
-      stage: token == null
-          ? GemmaModelStage.needsToken
-          : GemmaModelStage.notInstalled,
-    );
+    return const GemmaModelState(stage: GemmaModelStage.notInstalled);
   }
 
   /// Downloads the model, publishing progress as it goes.
@@ -501,50 +506,52 @@ class GemmaModel extends AsyncNotifier<GemmaModelState> {
 
   Future<void> _download() async {
     _lastProgress = 0;
-    final token = await ref.read(huggingFaceTokenStoreProvider).read();
-    if (token == null) {
-      state = const AsyncData(GemmaModelState(
-        stage: GemmaModelStage.needsToken,
-        message: errorNoToken,
-      ));
-      return;
-    }
-
     state = const AsyncData(
       GemmaModelState(stage: GemmaModelStage.downloading),
     );
 
     try {
-      await ref.read(gemmaGatewayProvider).install(
-            url: FlutterGemmaGateway.defaultModelUrl,
-            token: token,
+      final artifact = await ModelArtifact.bundled();
+      await ref
+          .read(gemmaGatewayProvider)
+          .install(
+            artifact: artifact,
             onProgress: (progress) {
               // Progress arrives from a native callback that outlives a disposed
               // notifier — the user can leave the screen mid-download. Writing to
               // state then would throw inside the plugin's callback, where
               // nothing can catch it.
               if (!ref.mounted) return;
-              // Only forward: the engine and the model report separately, and
-              // a bar that steps backwards reads as a restart. A repeat of the
-              // figure already shown is dropped too — it would redraw nothing.
+              // A restart after lost resume data resets the figure honestly.
               final clamped = progress.clamp(0, 100);
-              if (clamped <= _lastProgress) return;
+              if (clamped == _lastProgress) return;
               _lastProgress = clamped;
-              state = AsyncData(GemmaModelState(
-                stage: GemmaModelStage.downloading,
-                progress: clamped,
-              ));
+              state = AsyncData(
+                GemmaModelState(
+                  stage: GemmaModelStage.downloading,
+                  progress: clamped,
+                ),
+              );
+            },
+            onVerifying: () {
+              if (!ref.mounted) return;
+              state = const AsyncData(
+                GemmaModelState(stage: GemmaModelStage.verifying),
+              );
             },
           );
       if (!ref.mounted) return;
       state = const AsyncData(GemmaModelState(stage: GemmaModelStage.ready));
-    } catch (e, st) {
-      debugPrint('Gemma model download failed: $e\n$st');
+    } catch (e) {
+      // A downloader exception can contain its signed URL. Log only the type.
+      debugPrint('Gemma model download failed (${e.runtimeType})');
       if (!ref.mounted) return;
-      state = AsyncData(GemmaModelState(
-        stage: GemmaModelStage.failed,
-        message: _formatErrorMessage(e),
-      ));
+      state = AsyncData(
+        GemmaModelState(
+          stage: GemmaModelStage.failed,
+          message: _formatErrorMessage(e),
+        ),
+      );
     }
   }
 
@@ -553,18 +560,10 @@ class GemmaModel extends AsyncNotifier<GemmaModelState> {
   /// Three tiers, in order, because a looser rule placed earlier steals cases
   /// from a stricter one placed later:
   ///
-  /// 1. The plugin's own verdict. It renders a transport failure as
-  ///    `Network error: <message>`, and that message is free-form — an offset, a
-  ///    host, a byte count. Its digits are not status codes, so its
-  ///    classification has to win before any of them are looked at.
-  /// 2. Explicit status codes, matched as `http <code>` rather than as a bare
-  ///    three-digit number, so "reset after 403 bytes" is not read as a licence
-  ///    the user must go and accept.
-  /// 3. Transport words for the failures that never reach the plugin's own
-  ///    classifier — a `SocketException` from the platform channel. Last because
-  ///    "connection" also appears in advice text.
+  /// Typed errors from the link and transfer services already carry safe copy.
   static String _formatErrorMessage(Object e) {
     // Typed failures first: these come from this app, not from free-form text.
+    if (e is ModelDownloadException) return e.message;
     if (e is GemmaStorageException) return errorNoStorage;
     if (e is GemmaEngineException) {
       if (e.isStorage) return errorNoStorage;
@@ -574,8 +573,7 @@ class GemmaModel extends AsyncNotifier<GemmaModelState> {
         // not deliver the engine to it.
         'PLAY_STORE_NOT_FOUND' ||
         'APP_NOT_OWNED' ||
-        'API_NOT_AVAILABLE' =>
-          errorEngineUnavailable,
+        'API_NOT_AVAILABLE' => errorEngineUnavailable,
         _ => errorDownloadFailed,
       };
     }
@@ -585,12 +583,10 @@ class GemmaModel extends AsyncNotifier<GemmaModelState> {
       return errorNetwork;
     }
     if (error.contains('http 401') || error.contains('unauthorized')) {
-      return 'AUTHENTICATION FAILED (401) — VERIFY YOUR HUGGINGFACE TOKEN';
+      return 'SESSION EXPIRED — SIGN IN AGAIN';
     }
-    if (error.contains('http 403') ||
-        error.contains('forbidden') ||
-        error.contains('gated')) {
-      return 'ACCESS FORBIDDEN (403) — ACCEPT GEMMA ACCESS TERMS ON HUGGINGFACE';
+    if (error.contains('http 403') || error.contains('forbidden')) {
+      return 'MODEL LINK EXPIRED — TRY AGAIN';
     }
     if (error.contains('http 404') || error.contains('not found')) {
       return 'MODEL NOT FOUND (404) — THE SPECIFIED FILE DOES NOT EXIST';
@@ -616,7 +612,8 @@ class GemmaModel extends AsyncNotifier<GemmaModelState> {
   }
 }
 
-final gemmaModelProvider =
-    AsyncNotifierProvider<GemmaModel, GemmaModelState>(() {
-  return GemmaModel();
-});
+final gemmaModelProvider = AsyncNotifierProvider<GemmaModel, GemmaModelState>(
+  () {
+    return GemmaModel();
+  },
+);

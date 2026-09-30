@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_factor/features/projection/gemma_model_service.dart';
+import 'package:void_factor/features/projection/model_artifact.dart';
 import 'package:void_factor/features/projection/projection_engine.dart';
 import 'package:void_factor/features/projection/recommendation_narrator.dart';
 import 'package:void_factor/models/projection.dart';
@@ -54,11 +55,10 @@ class _FakeGemma implements GemmaGateway {
 
   @override
   Future<void> install({
-    required String url,
-    required String? token,
+    required ModelArtifact artifact,
     required void Function(int progress) onProgress,
-  }) async =>
-      throw UnsupportedError('not exercised by the narrator');
+    required void Function() onVerifying,
+  }) async => throw UnsupportedError('not exercised by the narrator');
 
   @override
   Future<void> uninstall() async =>
@@ -80,16 +80,14 @@ class _BrokenGemma implements GemmaGateway {
     required String prompt,
     required String systemInstruction,
     required Duration timeout,
-  }) async =>
-      throw StateError('plugin unavailable');
+  }) async => throw StateError('plugin unavailable');
 
   @override
   Future<void> install({
-    required String url,
-    required String? token,
+    required ModelArtifact artifact,
     required void Function(int progress) onProgress,
-  }) async =>
-      throw UnsupportedError('not exercised by the narrator');
+    required void Function() onVerifying,
+  }) async => throw UnsupportedError('not exercised by the narrator');
 
   @override
   Future<void> uninstall() async =>
@@ -255,10 +253,7 @@ void main() {
     test('no activity at all names the missing connection, not a shortfall', () {
       // "Burn 300 more kcal" is useless advice to someone whose phone simply is
       // not sending the app any activity.
-      final card = narrator.render(
-        projectionOf(),
-        candidateOf(magnitude: 0),
-      );
+      final card = narrator.render(projectionOf(), candidateOf(magnitude: 0));
       expect(card.body, contains('health data'));
       expect(card.body, isNot(contains('brisk')));
     });
@@ -271,19 +266,21 @@ void main() {
       expect(card.body, contains('above'));
     });
 
-    test('enough weigh-ins on a measured basis says the trend is being read',
-        () {
-      final card = narrator.render(
-        projectionOf(basis: ProjectionBasis.measured),
-        candidateOf(
-          kind: RecommendationKind.weighInCadence,
-          magnitude: 9,
-          target: 8,
-          onTarget: true,
-        ),
-      );
-      expect(card.body, contains('measured trend'));
-    });
+    test(
+      'enough weigh-ins on a measured basis says the trend is being read',
+      () {
+        final card = narrator.render(
+          projectionOf(basis: ProjectionBasis.measured),
+          candidateOf(
+            kind: RecommendationKind.weighInCadence,
+            magnitude: 9,
+            target: 8,
+            onTarget: true,
+          ),
+        );
+        expect(card.body, contains('measured trend'));
+      },
+    );
 
     test('enough weigh-ins bunched together says they need to span weeks', () {
       // Nine weigh-ins inside four days clears the count but not the span, and
@@ -305,10 +302,9 @@ void main() {
 
   group('GemmaNarrator falls back', () {
     Future<List<Recommendation>> narrateWith(GemmaGateway gateway) {
-      return GemmaNarrator(gateway: gateway).narrate(
-        projection: projectionOf(),
-        candidates: threeCandidates,
-      );
+      return GemmaNarrator(
+        gateway: gateway,
+      ).narrate(projection: projectionOf(), candidates: threeCandidates);
     }
 
     Future<void> expectTemplated(GemmaGateway gateway) async {
@@ -319,8 +315,11 @@ void main() {
       );
       expect(cards.map((c) => c.title), templated.map((c) => c.title));
       expect(cards.map((c) => c.body), templated.map((c) => c.body));
-      expect(cards.every((c) => !c.narratedOnDevice), isTrue,
-          reason: 'templated copy must never be labelled as model-written');
+      expect(
+        cards.every((c) => !c.narratedOnDevice),
+        isTrue,
+        reason: 'templated copy must never be labelled as model-written',
+      );
     }
 
     test('when no model is installed, without loading one', () async {
@@ -342,9 +341,11 @@ void main() {
     });
 
     test('on a reply that is not JSON at all', () async {
-      await expectTemplated(_FakeGemma(
-        response: 'Sure! Here is some advice about your weight loss goals.',
-      ));
+      await expectTemplated(
+        _FakeGemma(
+          response: 'Sure! Here is some advice about your weight loss goals.',
+        ),
+      );
     });
 
     test('on malformed JSON', () async {
@@ -356,98 +357,114 @@ void main() {
     });
 
     test('on too few objects', () async {
-      await expectTemplated(_FakeGemma(
-        response: jsonArray([('BURN MORE', 'Walk further.')]),
-      ));
+      await expectTemplated(
+        _FakeGemma(response: jsonArray([('BURN MORE', 'Walk further.')])),
+      );
     });
 
     test('on too many objects', () async {
-      await expectTemplated(_FakeGemma(
-        response: jsonArray([
-          ('ONE', 'Walk further.'),
-          ('TWO', 'Log your food.'),
-          ('THREE', 'Eat less.'),
-          ('FOUR', 'Invented.'),
-        ]),
-      ));
+      await expectTemplated(
+        _FakeGemma(
+          response: jsonArray([
+            ('ONE', 'Walk further.'),
+            ('TWO', 'Log your food.'),
+            ('THREE', 'Eat less.'),
+            ('FOUR', 'Invented.'),
+          ]),
+        ),
+      );
     });
 
     test('on an array of strings rather than objects', () async {
-      await expectTemplated(_FakeGemma(
-        response: '["walk further", "log your food", "eat less"]',
-      ));
+      await expectTemplated(
+        _FakeGemma(response: '["walk further", "log your food", "eat less"]'),
+      );
     });
 
     test('on a missing body key', () async {
-      await expectTemplated(_FakeGemma(
-        response: '[{"title": "ONE"}, {"title": "TWO"}, {"title": "THREE"}]',
-      ));
+      await expectTemplated(
+        _FakeGemma(
+          response: '[{"title": "ONE"}, {"title": "TWO"}, {"title": "THREE"}]',
+        ),
+      );
     });
 
     test('on a non-string title', () async {
-      await expectTemplated(_FakeGemma(
-        response: '[{"title": 1, "body": "Walk."}, '
-            '{"title": "TWO", "body": "Log."}, '
-            '{"title": "THREE", "body": "Eat."}]',
-      ));
+      await expectTemplated(
+        _FakeGemma(
+          response:
+              '[{"title": 1, "body": "Walk."}, '
+              '{"title": "TWO", "body": "Log."}, '
+              '{"title": "THREE", "body": "Eat."}]',
+        ),
+      );
     });
 
     test('on a blank body', () async {
-      await expectTemplated(_FakeGemma(
-        response: jsonArray([
-          ('ONE', '   '),
-          ('TWO', 'Log your food.'),
-          ('THREE', 'Eat less.'),
-        ]),
-      ));
+      await expectTemplated(
+        _FakeGemma(
+          response: jsonArray([
+            ('ONE', '   '),
+            ('TWO', 'Log your food.'),
+            ('THREE', 'Eat less.'),
+          ]),
+        ),
+      );
     });
 
     test('on a body past the length cap', () async {
-      await expectTemplated(_FakeGemma(
-        response: jsonArray([
-          ('ONE', 'Walk. ' * 60),
-          ('TWO', 'Log your food.'),
-          ('THREE', 'Eat less.'),
-        ]),
-      ));
+      await expectTemplated(
+        _FakeGemma(
+          response: jsonArray([
+            ('ONE', 'Walk. ' * 60),
+            ('TWO', 'Log your food.'),
+            ('THREE', 'Eat less.'),
+          ]),
+        ),
+      );
     });
 
     test('on a title past the length cap', () async {
-      await expectTemplated(_FakeGemma(
-        response: jsonArray([
-          ('A VERY LONG HEADING INDEED THAT RUNS ON', 'Walk further.'),
-          ('TWO', 'Log your food.'),
-          ('THREE', 'Eat less.'),
-        ]),
-      ));
+      await expectTemplated(
+        _FakeGemma(
+          response: jsonArray([
+            ('A VERY LONG HEADING INDEED THAT RUNS ON', 'Walk further.'),
+            ('TWO', 'Log your food.'),
+            ('THREE', 'Eat less.'),
+          ]),
+        ),
+      );
     });
   });
 
   group('GemmaNarrator cannot introduce a number', () {
     Future<List<Recommendation>> narrateResponse(String response) {
-      return GemmaNarrator(gateway: _FakeGemma(response: response)).narrate(
-        projection: projectionOf(),
-        candidates: threeCandidates,
-      );
+      return GemmaNarrator(
+        gateway: _FakeGemma(response: response),
+      ).narrate(projection: projectionOf(), candidates: threeCandidates);
     }
 
     test('an invented figure in a body rejects the whole reply', () async {
       // 450 was never computed. A small model writing it would be stating
       // something false about the user's body, which is not a wording problem.
-      final cards = await narrateResponse(jsonArray([
-        ('BURN MORE', 'Push your daily burn to 450 kcal.'),
-        ('LOG FOOD', 'Log your food.'),
-        ('EAT LESS', 'Eat less.'),
-      ]));
+      final cards = await narrateResponse(
+        jsonArray([
+          ('BURN MORE', 'Push your daily burn to 450 kcal.'),
+          ('LOG FOOD', 'Log your food.'),
+          ('EAT LESS', 'Eat less.'),
+        ]),
+      );
       expect(cards.every((c) => !c.narratedOnDevice), isTrue);
     });
 
     test('an invented figure in a title rejects the whole reply', () async {
-      final cards = await narrateResponse(jsonArray([
-        ('BURN 999 KCAL', 'Walk further.'),
-        ('LOG FOOD', 'Log your food.'),
-        ('EAT LESS', 'Eat less.'),
-      ]));
+      final cards = await narrateResponse(
+        jsonArray([
+          ('BURN 999 KCAL', 'Walk further.'),
+          ('LOG FOOD', 'Log your food.'),
+          ('EAT LESS', 'Eat less.'),
+        ]),
+      );
       expect(cards.every((c) => !c.narratedOnDevice), isTrue);
     });
 
@@ -455,33 +472,41 @@ void main() {
       // Two perfectly good rewrites are discarded with the third. A list carrying
       // two voices reads as broken, and `narratedOnDevice` would be true of only
       // part of what the UI labels.
-      final cards = await narrateResponse(jsonArray([
-        ('BURN MORE', 'Push your daily burn to 300 kcal.'),
-        ('LOG FOOD', 'Log 10 of the next 14 days.'),
-        ('EAT LESS', 'Aim for a 1200 kcal deficit.'),
-      ]));
+      final cards = await narrateResponse(
+        jsonArray([
+          ('BURN MORE', 'Push your daily burn to 300 kcal.'),
+          ('LOG FOOD', 'Log 10 of the next 14 days.'),
+          ('EAT LESS', 'Aim for a 1200 kcal deficit.'),
+        ]),
+      );
       expect(cards.every((c) => !c.narratedOnDevice), isTrue);
       expect(cards.first.body, contains('brisk'));
     });
 
-    test('a digit run that is only a prefix of a real figure is rejected',
-        () async {
-      // 55 is a substring of 550, so a naive containment check would let it
-      // through. It is still a number nobody computed.
-      final cards = await narrateResponse(jsonArray([
-        ('BURN MORE', 'Walk further.'),
-        ('LOG FOOD', 'Log your food.'),
-        ('EAT LESS', 'Cut 55 kcal.'),
-      ]));
-      expect(cards.every((c) => !c.narratedOnDevice), isTrue);
-    });
+    test(
+      'a digit run that is only a prefix of a real figure is rejected',
+      () async {
+        // 55 is a substring of 550, so a naive containment check would let it
+        // through. It is still a number nobody computed.
+        final cards = await narrateResponse(
+          jsonArray([
+            ('BURN MORE', 'Walk further.'),
+            ('LOG FOOD', 'Log your food.'),
+            ('EAT LESS', 'Cut 55 kcal.'),
+          ]),
+        );
+        expect(cards.every((c) => !c.narratedOnDevice), isTrue);
+      },
+    );
 
     test('quoting a computed figure is allowed', () async {
-      final cards = await narrateResponse(jsonArray([
-        ('BURN MORE', 'Push your daily burn from 150 to 300 kcal.'),
-        ('LOG FOOD', 'Log 10 of the next 14 days.'),
-        ('EAT LESS', 'Trade your 200 surplus for a 550 deficit.'),
-      ]));
+      final cards = await narrateResponse(
+        jsonArray([
+          ('BURN MORE', 'Push your daily burn from 150 to 300 kcal.'),
+          ('LOG FOOD', 'Log 10 of the next 14 days.'),
+          ('EAT LESS', 'Trade your 200 surplus for a 550 deficit.'),
+        ]),
+      );
       expect(cards.every((c) => c.narratedOnDevice), isTrue);
     });
   });
@@ -498,10 +523,9 @@ void main() {
           ('eat less', 'Trim your portions.'),
         ]),
       );
-      cards = await GemmaNarrator(gateway: gateway).narrate(
-        projection: projectionOf(),
-        candidates: threeCandidates,
-      );
+      cards = await GemmaNarrator(
+        gateway: gateway,
+      ).narrate(projection: projectionOf(), candidates: threeCandidates);
     });
 
     test('uses the model prose', () {
@@ -523,7 +547,11 @@ void main() {
     test('keeps the computed headline figures untouched', () {
       // The model has no route to `value` at all: the largest text on each card
       // is always the number Dart computed.
-      expect(cards.map((c) => c.value), ['300 KCAL', '10 / 14 DAYS', '-550 KCAL']);
+      expect(cards.map((c) => c.value), [
+        '300 KCAL',
+        '10 / 14 DAYS',
+        '-550 KCAL',
+      ]);
     });
 
     test('keeps the kinds and their order', () {
@@ -552,10 +580,9 @@ void main() {
 
   group('GemmaNarrator tolerance', () {
     Future<List<Recommendation>> narrateResponse(String response) {
-      return GemmaNarrator(gateway: _FakeGemma(response: response)).narrate(
-        projection: projectionOf(),
-        candidates: threeCandidates,
-      );
+      return GemmaNarrator(
+        gateway: _FakeGemma(response: response),
+      ).narrate(projection: projectionOf(), candidates: threeCandidates);
     }
 
     test('accepts an array wrapped in a fenced code block', () async {
@@ -563,11 +590,7 @@ void main() {
       // told not to. Losing a valid response to that would be a self-inflicted
       // fallback.
       final cards = await narrateResponse(
-        'Here you go:\n```json\n${jsonArray([
-              ('BURN MORE', 'Walk further.'),
-              ('LOG FOOD', 'Log every meal.'),
-              ('EAT LESS', 'Trim portions.'),
-            ])}\n```\nHope that helps!',
+        'Here you go:\n```json\n${jsonArray([('BURN MORE', 'Walk further.'), ('LOG FOOD', 'Log every meal.'), ('EAT LESS', 'Trim portions.')])}\n```\nHope that helps!',
       );
       expect(cards.every((c) => c.narratedOnDevice), isTrue);
     });
@@ -591,8 +614,9 @@ void main() {
         projection: projection,
         candidates: threeCandidates,
       );
-      final prompt = GemmaNarrator(gateway: _FakeGemma())
-          .buildPrompt(projection, baseline);
+      final prompt = GemmaNarrator(
+        gateway: _FakeGemma(),
+      ).buildPrompt(projection, baseline);
 
       expect(prompt, isNot(contains(RegExp(r'\d\.\d'))));
     });
@@ -603,8 +627,9 @@ void main() {
         projection: projection,
         candidates: threeCandidates,
       );
-      final prompt = GemmaNarrator(gateway: _FakeGemma())
-          .buildPrompt(projection, baseline);
+      final prompt = GemmaNarrator(
+        gateway: _FakeGemma(),
+      ).buildPrompt(projection, baseline);
 
       for (final card in baseline) {
         expect(prompt, contains(card.title));
@@ -622,8 +647,9 @@ void main() {
         projection: projection,
         candidates: threeCandidates,
       );
-      final prompt = GemmaNarrator(gateway: _FakeGemma())
-          .buildPrompt(projection, baseline);
+      final prompt = GemmaNarrator(
+        gateway: _FakeGemma(),
+      ).buildPrompt(projection, baseline);
 
       expect(prompt, contains('hold their weight steady'));
       expect(prompt, contains('moving away from target'));
@@ -635,8 +661,9 @@ void main() {
         projection: projection,
         candidates: threeCandidates,
       );
-      final prompt = GemmaNarrator(gateway: _FakeGemma())
-          .buildPrompt(projection, baseline);
+      final prompt = GemmaNarrator(
+        gateway: _FakeGemma(),
+      ).buildPrompt(projection, baseline);
 
       expect(prompt, contains('exactly 3 objects'));
     });
@@ -645,10 +672,9 @@ void main() {
   group('GemmaNarrator with nothing to say', () {
     test('returns an empty list without loading the model', () async {
       final gateway = _FakeGemma();
-      final cards = await GemmaNarrator(gateway: gateway).narrate(
-        projection: projectionOf(),
-        candidates: const [],
-      );
+      final cards = await GemmaNarrator(
+        gateway: gateway,
+      ).narrate(projection: projectionOf(), candidates: const []);
       expect(cards, isEmpty);
       expect(gateway.generateCalls, 0);
     });

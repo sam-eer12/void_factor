@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/routes.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/projection/gemma_model_service.dart';
+import '../../features/projection/model_download_consent.dart';
 import '../../features/projection/projection_format.dart';
 import '../../features/projection/projection_providers.dart';
 import '../../features/weight_log/weight_log_providers.dart';
@@ -60,10 +60,14 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
       key: _scaffoldKey,
       backgroundColor: MonolithTheme.background,
       drawer: MonolithDrawer(
-        userName: (ref.watch(authStateProvider
-                    .select((user) => user.value?.displayName)) ??
-                'USER')
-            .toUpperCase(),
+        userName:
+            (ref.watch(
+                      authStateProvider.select(
+                        (user) => user.value?.displayName,
+                      ),
+                    ) ??
+                    'USER')
+                .toUpperCase(),
         onProfileTap: () {
           Navigator.pop(context);
           MonolithShell.setActiveTab(context, 3, '/settings');
@@ -148,44 +152,47 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
   }
 
   Widget _topBar() => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        decoration: const BoxDecoration(
-          color: MonolithTheme.surface,
-          border: Border(
-            bottom: BorderSide(
+    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+    decoration: const BoxDecoration(
+      color: MonolithTheme.surface,
+      border: Border(
+        bottom: BorderSide(
+          color: MonolithTheme.primary,
+          width: MonolithTheme.borderWidth,
+        ),
+      ),
+    ),
+    child: Row(
+      children: [
+        GestureDetector(
+          onTap: () => _scaffoldKey.currentState?.openDrawer(),
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: MonolithTheme.containerDecoration,
+            child: const Icon(
+              Icons.menu,
               color: MonolithTheme.primary,
-              width: MonolithTheme.borderWidth,
+              size: 22,
             ),
           ),
         ),
-        child: Row(
-          children: [
-            GestureDetector(
-              onTap: () => _scaffoldKey.currentState?.openDrawer(),
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: MonolithTheme.containerDecoration,
-                child: const Icon(Icons.menu,
-                    color: MonolithTheme.primary, size: 22),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Text('Void_Factor', style: MonolithTheme.headlineLarge),
-          ],
-        ),
-      );
+        const SizedBox(width: 16),
+        Text('Void_Factor', style: MonolithTheme.headlineLarge),
+      ],
+    ),
+  );
 
   // ──────────────────────────────────────────────
   // Trajectory
   // ──────────────────────────────────────────────
 
   List<Widget> _projectionSection(Projection projection) => [
-        _trajectoryCard(projection),
-        const SizedBox(height: 16),
-        _logWeightButton(seedKg: projection.currentWeightKg),
-        const SizedBox(height: 16),
-        _goalCard(projection),
-      ];
+    _trajectoryCard(projection),
+    const SizedBox(height: 16),
+    _logWeightButton(seedKg: projection.currentWeightKg),
+    const SizedBox(height: 16),
+    _goalCard(projection),
+  ];
 
   Widget _trajectoryCard(Projection projection) {
     return MonolithCard(
@@ -195,8 +202,10 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
           Row(
             children: [
               Expanded(
-                child: Text('WEIGHT TRAJECTORY',
-                    style: MonolithTheme.headlineMedium),
+                child: Text(
+                  'WEIGHT TRAJECTORY',
+                  style: MonolithTheme.headlineMedium,
+                ),
               ),
               const SizedBox(width: 8),
               _statusChip(projection.status),
@@ -231,8 +240,10 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
               ),
               _statDivider(),
               Expanded(
-                child:
-                    _stat('TARGET (KG)', _kgOrDash(projection.targetWeightKg)),
+                child: _stat(
+                  'TARGET (KG)',
+                  _kgOrDash(projection.targetWeightKg),
+                ),
               ),
               _statDivider(),
               Expanded(
@@ -265,18 +276,16 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
     final isMuted = switch (status) {
       ProjectionStatus.behind ||
       ProjectionStatus.stalled ||
-      ProjectionStatus.insufficientData =>
-        true,
+      ProjectionStatus.insufficientData => true,
       _ => false,
     };
 
     final background = isAlarming
         ? MonolithTheme.error
         : isMuted
-            ? MonolithTheme.surface
-            : MonolithTheme.primary;
-    final foreground =
-        isMuted ? MonolithTheme.primary : MonolithTheme.surface;
+        ? MonolithTheme.surface
+        : MonolithTheme.primary;
+    final foreground = isMuted ? MonolithTheme.primary : MonolithTheme.surface;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -311,10 +320,10 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
   }
 
   Widget _statDivider() => Container(
-        width: MonolithTheme.borderWidth,
-        height: 40,
-        color: MonolithTheme.primary,
-      );
+    width: MonolithTheme.borderWidth,
+    height: 40,
+    color: MonolithTheme.primary,
+  );
 
   /// Same convention as the settings screen: an unset metric is `--`, never `0`.
   String _kgOrDash(double kg) => kg > 0 ? projectionKgLabel(kg) : '--';
@@ -322,76 +331,77 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
   /// A titled card of the same geometry as the real one, so nothing on the screen
   /// moves when the projection arrives.
   List<Widget> _projectionLoading() => [
-        MonolithCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('WEIGHT TRAJECTORY', style: MonolithTheme.headlineMedium),
-              const SizedBox(height: 8),
-              Text(
-                'READING YOUR LOGS',
-                style: MonolithTheme.labelSmall.copyWith(
-                  color: MonolithTheme.outline,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Container(
-                height: WeightTrajectoryChart.height,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  border:
-                      Border.all(color: MonolithTheme.primary, width: 1),
-                ),
-                child: const Center(
-                  child: SizedBox(
-                    height: 32,
-                    width: 32,
-                    child: CircularProgressIndicator.adaptive(
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        MonolithTheme.primary,
-                      ),
-                    ),
+    MonolithCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('WEIGHT TRAJECTORY', style: MonolithTheme.headlineMedium),
+          const SizedBox(height: 8),
+          Text(
+            'READING YOUR LOGS',
+            style: MonolithTheme.labelSmall.copyWith(
+              color: MonolithTheme.outline,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            height: WeightTrajectoryChart.height,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              border: Border.all(color: MonolithTheme.primary, width: 1),
+            ),
+            child: const Center(
+              child: SizedBox(
+                height: 32,
+                width: 32,
+                child: CircularProgressIndicator.adaptive(
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    MonolithTheme.primary,
                   ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
-      ];
+        ],
+      ),
+    ),
+  ];
 
   /// Every source behind the projection is local — a file, secure storage, a
   /// cached profile — so a failure here is not something the user did. It gets a
   /// retry rather than an explanation of a `FileSystemException`.
   List<Widget> _projectionError() => [
-        MonolithCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(ProjectionsScreen.errorProjection,
-                  style: MonolithTheme.headlineMedium),
-              const SizedBox(height: 8),
-              Text(
-                'Your profile or your logs could not be read just now. '
-                'Nothing has been lost.',
-                style: MonolithTheme.bodyMedium.copyWith(
-                  color: MonolithTheme.outline,
-                ),
-              ),
-              const SizedBox(height: 20),
-              MonolithButton(
-                label: 'TRY AGAIN',
-                style: MonolithButtonStyle.secondary,
-                onPressed: () => ref.invalidate(projectionProvider),
-              ),
-            ],
+    MonolithCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            ProjectionsScreen.errorProjection,
+            style: MonolithTheme.headlineMedium,
           ),
-        ),
-        const SizedBox(height: 16),
-        // Still offered: a weigh-in is stored by a different path than the one
-        // that just failed, and it is the thing most likely to fill an empty
-        // projection in.
-        _logWeightButton(seedKg: 0),
-      ];
+          const SizedBox(height: 8),
+          Text(
+            'Your profile or your logs could not be read just now. '
+            'Nothing has been lost.',
+            style: MonolithTheme.bodyMedium.copyWith(
+              color: MonolithTheme.outline,
+            ),
+          ),
+          const SizedBox(height: 20),
+          MonolithButton(
+            label: 'TRY AGAIN',
+            style: MonolithButtonStyle.secondary,
+            onPressed: () => ref.invalidate(projectionProvider),
+          ),
+        ],
+      ),
+    ),
+    const SizedBox(height: 16),
+    // Still offered: a weigh-in is stored by a different path than the one
+    // that just failed, and it is the thing most likely to fill an empty
+    // projection in.
+    _logWeightButton(seedKg: 0),
+  ];
 
   Widget _goalCard(Projection projection) {
     final copy = projectionGoalCopy(projection);
@@ -433,11 +443,11 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
   /// Secondary rather than filled: it sits between two heavy black elements, and
   /// a third would leave the section with no focal point at all.
   Widget _logWeightButton({required double seedKg}) => MonolithButton(
-        label: 'LOG WEIGHT',
-        style: MonolithButtonStyle.secondary,
-        icon: Icons.monitor_weight,
-        onPressed: () => _logWeight(seedKg),
-      );
+    label: 'LOG WEIGHT',
+    style: MonolithButtonStyle.secondary,
+    icon: Icons.monitor_weight,
+    onPressed: () => _logWeight(seedKg),
+  );
 
   Future<void> _logWeight(double seedKg) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -479,12 +489,17 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.memory,
-                    color: MonolithTheme.primary, size: 20),
+                const Icon(
+                  Icons.memory,
+                  color: MonolithTheme.primary,
+                  size: 20,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text('ON-DEVICE WORDING',
-                      style: MonolithTheme.labelLarge),
+                  child: Text(
+                    'ON-DEVICE WORDING',
+                    style: MonolithTheme.labelLarge,
+                  ),
                 ),
               ],
             ),
@@ -499,26 +514,27 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
 
   /// A progress bar mid-download, an offer otherwise.
   List<Widget> _modelGateBody(GemmaModelState model) {
-    void download() => ref.read(gemmaModelProvider.notifier).download();
+    void download() => agreeAndDownloadModel(context, ref);
 
     switch (model.stage) {
       case GemmaModelStage.downloading:
         return _downloadProgress(model.progress);
-      case GemmaModelStage.needsToken:
-        return _modelGateOffer(
-          body: 'YOUR RECOMMENDATIONS CAN BE WORDED BY A MODEL RUNNING ON '
-              'THIS PHONE. IT IS A GATED DOWNLOAD, SO IT NEEDS A HUGGINGFACE '
-              'TOKEN ONCE.',
-          action: 'ADD TOKEN',
-          onPressed: () =>
-              Navigator.restorablePushNamed(context, AppRoutes.onDeviceModel),
-        );
+      case GemmaModelStage.verifying:
+        return [
+          Text(
+            'VERIFYING MODEL FILE…',
+            style: MonolithTheme.labelSmall.copyWith(
+              color: MonolithTheme.outline,
+            ),
+          ),
+        ];
       case GemmaModelStage.notInstalled:
         return _modelGateOffer(
-          body: 'DOWNLOAD THE ON-DEVICE MODEL (ABOUT HALF A GIGABYTE) TO HAVE '
+          body:
+              'DOWNLOAD THE ON-DEVICE MODEL (ABOUT HALF A GIGABYTE) TO HAVE '
               'YOUR RECOMMENDATIONS WORDED HERE. THE FIGURES ARE COMPUTED BY '
               'THE APP EITHER WAY.',
-          action: 'DOWNLOAD MODEL',
+          action: 'AGREE & DOWNLOAD MODEL',
           onPressed: download,
         );
       case GemmaModelStage.failed:
@@ -526,7 +542,7 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
           // The service's own message names what failed — no token, no network,
           // no room on the device — and each has a different fix.
           body: model.message ?? GemmaModel.errorDownloadFailed,
-          action: 'TRY AGAIN',
+          action: 'AGREE & DOWNLOAD MODEL',
           onPressed: download,
         );
       case GemmaModelStage.ready:
@@ -540,45 +556,45 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
     required String body,
     required String action,
     required VoidCallback onPressed,
-  }) =>
-      [
-        Text(
-          body,
-          style: MonolithTheme.labelSmall.copyWith(
-            color: MonolithTheme.outline,
-          ),
-        ),
-        const SizedBox(height: 16),
-        MonolithButton(
-          label: action,
-          style: MonolithButtonStyle.secondary,
-          onPressed: onPressed,
-        ),
-      ];
+  }) => [
+    Text(
+      body,
+      style: MonolithTheme.labelSmall.copyWith(color: MonolithTheme.outline),
+    ),
+    const SizedBox(height: 16),
+    MonolithButton(
+      label: action,
+      style: MonolithButtonStyle.secondary,
+      onPressed: onPressed,
+    ),
+    const SizedBox(height: 8),
+    TextButton(
+      onPressed: () => showGemmaAgreement(context),
+      child: const Text('READ GEMMA TERMS'),
+    ),
+  ];
 
   List<Widget> _downloadProgress(int progress) => [
-        Text(
-          'DOWNLOADING — $progress%',
-          style: MonolithTheme.labelSmall.copyWith(
-            color: MonolithTheme.outline,
-          ),
+    Text(
+      'DOWNLOADING — $progress%',
+      style: MonolithTheme.labelSmall.copyWith(color: MonolithTheme.outline),
+    ),
+    const SizedBox(height: 8),
+    // A framed bar filled from the left, rather than a Material
+    // LinearProgressIndicator: this system has no rounded ends and no
+    // greys to fade between.
+    Container(
+      height: 16,
+      decoration: MonolithTheme.containerDecoration,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: FractionallySizedBox(
+          widthFactor: (progress / 100).clamp(0.0, 1.0),
+          child: Container(color: MonolithTheme.primary),
         ),
-        const SizedBox(height: 8),
-        // A framed bar filled from the left, rather than a Material
-        // LinearProgressIndicator: this system has no rounded ends and no
-        // greys to fade between.
-        Container(
-          height: 16,
-          decoration: MonolithTheme.containerDecoration,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: (progress / 100).clamp(0.0, 1.0),
-              child: Container(color: MonolithTheme.primary),
-            ),
-          ),
-        ),
-      ];
+      ),
+    ),
+  ];
 
   // ──────────────────────────────────────────────
   // Recommendations
@@ -592,8 +608,10 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(ProjectionsScreen.protocolsTitle,
-              style: MonolithTheme.headlineMedium),
+          Text(
+            ProjectionsScreen.protocolsTitle,
+            style: MonolithTheme.headlineMedium,
+          ),
           // The caption sits in the slot the trajectory card uses for its basis,
           // for the same reason. Trailing it after the last row instead would
           // put a line of small grey type directly under a line of small grey
@@ -627,8 +645,9 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
                 height: 32,
                 width: 32,
                 child: CircularProgressIndicator.adaptive(
-                  valueColor:
-                      AlwaysStoppedAnimation<Color>(MonolithTheme.primary),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    MonolithTheme.primary,
+                  ),
                 ),
               ),
             ),
@@ -672,10 +691,12 @@ class _ProjectionsScreenState extends ConsumerState<ProjectionsScreen> {
       if (i > 0) {
         rows
           ..add(const SizedBox(height: 16))
-          ..add(Container(
-            height: MonolithTheme.borderWidth,
-            color: MonolithTheme.primary,
-          ))
+          ..add(
+            Container(
+              height: MonolithTheme.borderWidth,
+              color: MonolithTheme.primary,
+            ),
+          )
           ..add(const SizedBox(height: 16));
       }
       rows.add(RecommendationRow(recommendation: recommendations[i]));

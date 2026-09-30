@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'app/app.dart';
 import 'features/food_log/pending_scan.dart';
 import 'features/health/health_background_service.dart';
+import 'features/projection/hf_token_store.dart';
+import 'features/projection/model_download_service.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -18,10 +21,9 @@ void main() async {
   // quietly download on a user's first launch.
   GoogleFonts.config.allowRuntimeFetching = false;
   LicenseRegistry.addLicense(() async* {
-    yield LicenseEntryWithLineBreaks(
-      const ['Space Grotesk'],
-      await rootBundle.loadString('assets/google_fonts/OFL.txt'),
-    );
+    yield LicenseEntryWithLineBreaks(const [
+      'Space Grotesk',
+    ], await rootBundle.loadString('assets/google_fonts/OFL.txt'));
   });
   // Only what the first frame needs, and side by side: neither waits on the
   // other. Auth needs Firebase before AuthGate can decide anything, and the
@@ -31,14 +33,19 @@ void main() async {
     Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
     LiquidGlassWidgets.initialize(),
   ]);
-  runApp(
-    const ProviderScope(
-      child: MonolithApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: MonolithApp()));
   // Nothing on screen depends on these, so they wait for the first frame
   // instead of holding it back.
   WidgetsBinding.instance.addPostFrameCallback((_) {
+    eraseLegacyHuggingFaceToken().catchError((Object _) {
+      // The next launch retries; a storage failure must not stop startup.
+    }).ignore();
+    sharedModelDownloadService
+        .prepareForAccount(FirebaseAuth.instance.currentUser?.uid)
+        .catchError((Object _) {
+          // Model screens retry recovery; optional downloads cannot block launch.
+        })
+        .ignore();
     // The background health refresh is only scheduled when the user turns
     // health sync on, and scheduling waits for this itself — and retries it,
     // so a failure here has nowhere useful to go.

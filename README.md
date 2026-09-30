@@ -13,14 +13,17 @@ nothing either.
 
 ## Status
 
-Pre-release. Everything below is implemented and tested, but the backend is not
-yet deployed and the Firestore rules are not yet pushed. See **Before you
-ship**.
+Pre-release. The app, signed model-link API and Nginx download path are
+implemented and tested locally. The backend is not yet deployed and the
+Firestore rules are not yet pushed. Real model acquisition and Android
+validation remain release steps. See **Before you ship** and
+[the model download contract](docs/model-download-contract.md).
 
 | Suite | Command |
 | --- | --- |
-| Flutter (809 tests) | `flutter test` |
-| Microservice (26 tests) | `cd microservice && pytest` |
+| Flutter (816 tests) | `flutter test` |
+| Microservice (98 tests) | `cd microservice && pytest` |
+| Local model edge | `microservice/.venv/bin/python microservice/modeltest/run.py` |
 | Firestore rules (9 tests) | see `test_rules/README.md` |
 
 ---
@@ -70,7 +73,7 @@ renders; it does not talk to Firestore, the filesystem, or the network.
 
 ### Prerequisites
 
-Flutter `>=3.11.5`, Python 3.10+, and a container engine for the backend.
+Flutter `>=3.11.5`, Python 3.11+, and a container engine for the backend.
 
 ### The app
 
@@ -179,7 +182,7 @@ HEIC from the file's magic number, refuses anything else before a provider is
 called, and tells the provider the real type. Responses are a typed contract
 (`microservice/app/schemas.py`): four non-negative numbers, never `null`.
 
-**Provider keys never leave the device.** They live in secure storage and travel
+**Provider keys are stored on the device.** They live in secure storage and travel
 per request as a header. The server's own keys are a local-testing convenience
 and are left blank in production.
 
@@ -210,7 +213,7 @@ as it was:
 
 - Flutter state restoration brings back the tab, the screens pushed over it,
   what is typed into the entry, profile and goals forms, and scroll positions.
-  API keys and the HuggingFace token are deliberately *not* restored.
+  API keys are deliberately *not* restored.
 - A scan's photo is held on disk (`pending_scan.dart`) from capture until the
   analysis answers. A photo the camera delivered to a killed app is recovered
   from the picker. Either way the next launch returns to the vision tab and
@@ -225,7 +228,7 @@ as it was:
 
 ## Before you ship
 
-Five things stand between this repo and users:
+The release steps still to complete:
 
 1. **Deploy the backend.** `deploy/README.md` — OCI Ampere A1, TLS via Let's
    Encrypt, systemd. Note the iptables step; it is the one that catches people.
@@ -247,6 +250,10 @@ Five things stand between this repo and users:
    Play Console listing. After editing the policy, regenerate and redeploy:
    `firebase deploy --only hosting --project signinpractice-bfade` from
    `firebase_hosting/`.
+6. **Host and validate the model download.** The signed-link API and Nginx
+   path are tested locally. Acquire and stage the pinned upstream artifact,
+   then verify the live edge and a real Android download, restart, offline
+   inference and removal. See [the model download contract](docs/model-download-contract.md).
 
 ### Two hosting sites, one project
 

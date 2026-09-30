@@ -7,6 +7,9 @@ services:
     environment:
       # Without this the /api/ routes fail closed, so local scanning would 503.
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-signinpractice-bfade}
+      MODEL_MANIFEST_PATH: /app/model-manifest.json
+    volumes:
+      - ./assets/models/gemma3_1b_q4.json:/app/model-manifest.json:ro
     expose:
       - "8000"
     networks:
@@ -35,6 +38,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/api_locations.conf:/etc/nginx/api_locations.conf:ro
       - ./nginx/api_http.conf:/etc/nginx/api_http.conf:ro
+      - ${MODEL_DIRECTORY:-./local-models}:/srv/void-factor/models:ro
     depends_on:
       microservice:
         condition: service_healthy
