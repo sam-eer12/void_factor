@@ -12,6 +12,12 @@ DEV_NVIDIA_KEY = os.getenv("NVIDIA_API_KEY")
 # fail closed with a 503; see app/auth.py.
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
 
+# All replicas use the same server-only secret. The origin is configured, never
+# inferred from Host or forwarded headers supplied by a caller.
+MODEL_SIGNING_SECRET = os.getenv("MODEL_SIGNING_SECRET")
+MODEL_PUBLIC_ORIGIN = os.getenv("MODEL_PUBLIC_ORIGIN")
+MODEL_MANIFEST_PATH = os.getenv("MODEL_MANIFEST_PATH")
+
 GEMINI_MODEL = "gemini-3.1-flash-lite-preview"
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
 NVIDIA_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"

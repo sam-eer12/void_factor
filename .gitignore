@@ -13,6 +13,8 @@
 migrate_working_dir/
 .agents/
 graphify-out/
+local-models/
+deploy/.env
 
 # IntelliJ related
 *.iml

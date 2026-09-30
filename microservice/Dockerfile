@@ -38,4 +38,4 @@ EXPOSE 8000
 
 # Three worker processes per replica. Each runs its own event loop and its own
 # connection pool to the providers.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "3"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "3", "--no-access-log"]

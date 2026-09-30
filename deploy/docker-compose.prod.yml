@@ -21,6 +21,9 @@ x-microservice: &microservice
       required: false
   environment:
     FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?FIREBASE_PROJECT_ID must be set}
+    MODEL_MANIFEST_PATH: /app/model-manifest.json
+  volumes:
+    - ../assets/models/gemma3_1b_q4.json:/app/model-manifest.json:ro
   expose:
     - "8000"
   networks:
@@ -62,6 +65,7 @@ services:
       - ./templates:/etc/nginx/templates:ro
       - ../nginx/api_locations.conf:/etc/nginx/api_locations.conf:ro
       - ../nginx/api_http.conf:/etc/nginx/api_http.conf:ro
+      - ${MODEL_DIRECTORY:-/srv/void-factor/models}:/srv/void-factor/models:ro
       - certbot-conf:/etc/letsencrypt:ro
       - certbot-www:/var/www/certbot:ro
     # A reload every 6h, so a renewed certificate is picked up without anyone
