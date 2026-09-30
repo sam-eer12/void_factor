@@ -303,7 +303,7 @@ class FlutterGemmaGateway implements GemmaGateway {
       if (await _engine.isInstalling()) return true;
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) return false;
-      return _downloads.isTransferring(uid, await ModelArtifact.bundled());
+      return await _downloads.isTransferring(uid, await ModelArtifact.bundled());
     } catch (e) {
       debugPrint('Gemma download check failed: $e');
       return false;
