@@ -2,22 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_factor/features/projection/gemma_model_service.dart';
-import 'package:void_factor/features/projection/hf_token_store.dart';
+import 'package:void_factor/features/projection/model_download_consent.dart';
 import 'package:void_factor/screens/settings/on_device_model_screen.dart';
 
-class _FakeHfTokenStore implements HuggingFaceTokenStore {
-  _FakeHfTokenStore([this.token]);
-
-  String? token;
-
+class _AcceptedConsent implements ModelDownloadConsent {
   @override
-  Future<String?> read() async => token;
-
-  @override
-  Future<void> write(String token) async => this.token = token;
-
-  @override
-  Future<void> delete() async => token = null;
+  Future<bool> ensureAccepted(BuildContext context) async => true;
 }
 
 class _TestGemmaModel extends GemmaModel {
@@ -38,7 +28,6 @@ class _TestGemmaModel extends GemmaModel {
 }
 
 void main() {
-  late _FakeHfTokenStore tokenStore;
   late _TestGemmaModel model;
 
   Future<void> pumpScreen(WidgetTester tester) async {
@@ -49,34 +38,30 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          huggingFaceTokenStoreProvider.overrideWithValue(tokenStore),
-          huggingFaceTokenPresentProvider
-              .overrideWith((ref) async => tokenStore.token != null),
+          modelDownloadConsentProvider.overrideWithValue(_AcceptedConsent()),
           gemmaModelProvider.overrideWith(() => model),
         ],
-        child: const MaterialApp(
-          home: OnDeviceModelScreen(),
-        ),
+        child: const MaterialApp(home: OnDeviceModelScreen()),
       ),
     );
     await tester.pumpAndSettle();
   }
 
   setUp(() {
-    tokenStore = _FakeHfTokenStore('hf_token_value');
     model = _TestGemmaModel(
       const GemmaModelState(stage: GemmaModelStage.notInstalled),
     );
   });
 
-  testWidgets('shows DOWNLOAD MODEL button when token is present but model absent',
-      (tester) async {
+  testWidgets('shows agreement download action when model is absent', (
+    tester,
+  ) async {
     await pumpScreen(tester);
 
-    expect(find.text('DOWNLOAD MODEL'), findsOneWidget);
-    expect(find.textContaining('Ready to download'), findsOneWidget);
+    expect(find.text('AGREE & DOWNLOAD MODEL'), findsOneWidget);
+    expect(find.textContaining('Optional download'), findsOneWidget);
 
-    await tester.tap(find.text('DOWNLOAD MODEL'));
+    await tester.tap(find.text('AGREE & DOWNLOAD MODEL'));
     await tester.pumpAndSettle();
 
     expect(model.downloadCalls, 1);
@@ -89,7 +74,7 @@ void main() {
     await pumpScreen(tester);
 
     expect(find.text('Downloading — 65% complete.'), findsOneWidget);
-    expect(find.text('DOWNLOAD MODEL'), findsNothing);
+    expect(find.text('AGREE & DOWNLOAD MODEL'), findsNothing);
   });
 
   testWidgets('shows TRY AGAIN when download failed', (tester) async {
@@ -102,9 +87,9 @@ void main() {
     await pumpScreen(tester);
 
     expect(find.text('AUTHENTICATION FAILED (401)'), findsOneWidget);
-    expect(find.text('TRY AGAIN'), findsOneWidget);
+    expect(find.text('AGREE & DOWNLOAD MODEL'), findsOneWidget);
 
-    await tester.tap(find.text('TRY AGAIN'));
+    await tester.tap(find.text('AGREE & DOWNLOAD MODEL'));
     await tester.pumpAndSettle();
 
     expect(model.downloadCalls, 1);
@@ -117,6 +102,6 @@ void main() {
     await pumpScreen(tester);
 
     expect(find.text('DELETE MODEL'), findsOneWidget);
-    expect(find.text('DOWNLOAD MODEL'), findsNothing);
+    expect(find.text('AGREE & DOWNLOAD MODEL'), findsNothing);
   });
 }

@@ -49,6 +49,7 @@ dependencies:
   # notification set, without which the downloader ignores foreground mode and
   # Android kills the half-gigabyte transfer at nine minutes.
   background_downloader: ^9.5.5
+  crypto: ^3.0.6
   path_provider: ^2.1.5
   # Already present transitively through flutter_gemma. Named because the app
   # preloads the on-demand engine's libraries itself; see gemma_engine.dart.
@@ -96,6 +97,8 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    - assets/models/
+    - assets/legal/
     # Space Grotesk, bundled so the first paint never waits on a font download.
     # google_fonts finds these by file name. Only the weights the theme uses:
     # w500, and w700 — which also serves w900, the family's heaviest being 700.

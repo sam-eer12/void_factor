@@ -32,7 +32,7 @@ class PrivacyPolicy {
 
   /// Bump this whenever any text below changes. It is the only version marker
   /// a reader gets, and both renderings show it.
-  static const String effectiveDate = '15 September 2026';
+  static const String effectiveDate = '30 September 2026';
 
   /// Where data requests actually arrive. Published, so expect it to be
   /// scraped; that is the cost of naming a reachable human.
@@ -45,8 +45,9 @@ class PrivacyPolicy {
     PolicySection(
       title: 'THE SHORT VERSION',
       paragraphs: [
-        'Your meals, your weigh-ins, your health readings and your AI provider '
-            'key never leave this phone. Your email address and a short profile '
+        'Your meals, your weigh-ins and your health readings stay on this phone. '
+            'Your AI provider key is stored here and sent only with a scan. '
+            'Your email address and a short profile '
             'are stored with your account so they come back when you sign in '
             'again. Food photos pass through our server on the way to the AI '
             'provider you chose, and are never saved by us.',
@@ -115,10 +116,16 @@ class PrivacyPolicy {
     PolicySection(
       title: 'THE ON-DEVICE MODEL',
       paragraphs: [
-        'If you turn on the on-device model, the app downloads Gemma from '
-            'Hugging Face once. After that it runs entirely on this phone, '
-            'offline. The wording of your recommendations is generated here and '
-            'no part of it is sent anywhere.',
+        'If you choose the on-device model, the app requests an expiring '
+            'download link using your signed-in account and downloads a fixed '
+            'Gemma model file from our OCI-hosted server. The app checks its '
+            'size and SHA-256 before installing it. Your accepted Gemma terms '
+            'version is saved on this device for your account.',
+        'The download request uses your Firebase ID token and user ID to '
+            'authorize and limit transfers. The model file is stored in app '
+            'storage. After installation, recommendation wording is generated '
+            'on this phone, offline; your meals, health readings and projections '
+            'are not sent to the model server.',
         'The model only changes the phrasing. Which recommendations you see is '
             'worked out in the app either way, so declining the download costs '
             'you nothing but nicer sentences.',
@@ -143,7 +150,14 @@ class PrivacyPolicy {
             'address a request came from, the time, which endpoint it reached, '
             'and the response status. They exist to keep the service running '
             'and to enforce the per-user rate limit.',
-        'Those logs hold no photos, no food names and no health data, and they '
+        'For optional model downloads, the service also measures bytes served '
+            'and uses your verified account ID to enforce separate download '
+            'limits. The model download carries an expiring signed URL. '
+            'Neither your model prompts nor your recommendations are sent to '
+            'that service.',
+        'Signed download URLs, authentication tokens and provider keys are '
+            'excluded from routine logs. Those logs hold no photos, no food '
+            'names and no health data, and they '
             'are discarded when the service is redeployed.',
       ],
     ),

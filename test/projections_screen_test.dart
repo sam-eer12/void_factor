@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:void_factor/app/routes.dart';
 import 'package:void_factor/features/projection/gemma_model_service.dart';
+import 'package:void_factor/features/projection/model_download_consent.dart';
 import 'package:void_factor/features/projection/projection_providers.dart';
 import 'package:void_factor/models/projection.dart';
 import 'package:void_factor/models/recommendation.dart';
@@ -31,6 +31,11 @@ class FakeGemmaModel extends GemmaModel {
   Future<void> download() async => downloadCalls++;
 }
 
+class _AcceptedConsent implements ModelDownloadConsent {
+  @override
+  Future<bool> ensureAccepted(BuildContext context) async => true;
+}
+
 void main() {
   final today = DateTime(2026, 8, 26);
 
@@ -47,7 +52,8 @@ void main() {
     int weighInDayCount = 6,
   }) {
     return Projection(
-      observed: observed ??
+      observed:
+          observed ??
           [
             WeightPoint(day: DateTime(2026, 8, 12), weightKg: 82),
             WeightPoint(day: today, weightKg: currentWeightKg),
@@ -95,12 +101,21 @@ void main() {
   }
 
   final defaultRecommendations = [
-    recommendation(RecommendationKind.calorieGap,
-        title: 'CALORIC DEFICIT', value: '-450 KCAL'),
-    recommendation(RecommendationKind.proteinFloor,
-        title: 'PROTEIN FLOOR', value: '120 G'),
-    recommendation(RecommendationKind.weighInCadence,
-        title: 'WEIGH-IN CADENCE', value: '2 / WK'),
+    recommendation(
+      RecommendationKind.calorieGap,
+      title: 'CALORIC DEFICIT',
+      value: '-450 KCAL',
+    ),
+    recommendation(
+      RecommendationKind.proteinFloor,
+      title: 'PROTEIN FLOOR',
+      value: '120 G',
+    ),
+    recommendation(
+      RecommendationKind.weighInCadence,
+      title: 'WEIGH-IN CADENCE',
+      value: '2 / WK',
+    ),
   ];
 
   /// Route names the screen pushed, so navigation wiring can be asserted without
@@ -110,9 +125,7 @@ void main() {
 
   setUp(() {
     pushedRoutes = [];
-    model = FakeGemmaModel(
-      const GemmaModelState(stage: GemmaModelStage.ready),
-    );
+    model = FakeGemmaModel(const GemmaModelState(stage: GemmaModelStage.ready));
   });
 
   /// Pumps the screen with each async source pinned.
@@ -141,35 +154,38 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        projectionProvider.overrideWith((ref) async {
-          if (projectionPending) return Completer<Projection>().future;
-          final failure = projectionFailure;
-          if (failure != null) throw failure;
-          return withProjection ?? projection();
-        }),
-        recommendationsProvider.overrideWith((ref) async {
-          if (recommendationsPending) {
-            return Completer<List<Recommendation>>().future;
-          }
-          final failure = recommendationsFailure;
-          if (failure != null) throw failure;
-          return withRecommendations ?? defaultRecommendations;
-        }),
-        gemmaModelProvider.overrideWith(() => model),
-      ],
-      child: MaterialApp(
-        home: const ProjectionsScreen(),
-        onGenerateRoute: (settings) {
-          pushedRoutes.add(settings.name);
-          return MaterialPageRoute(
-            builder: (_) => const Scaffold(body: Text('PUSHED')),
-            settings: settings,
-          );
-        },
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          projectionProvider.overrideWith((ref) async {
+            if (projectionPending) return Completer<Projection>().future;
+            final failure = projectionFailure;
+            if (failure != null) throw failure;
+            return withProjection ?? projection();
+          }),
+          recommendationsProvider.overrideWith((ref) async {
+            if (recommendationsPending) {
+              return Completer<List<Recommendation>>().future;
+            }
+            final failure = recommendationsFailure;
+            if (failure != null) throw failure;
+            return withRecommendations ?? defaultRecommendations;
+          }),
+          gemmaModelProvider.overrideWith(() => model),
+          modelDownloadConsentProvider.overrideWithValue(_AcceptedConsent()),
+        ],
+        child: MaterialApp(
+          home: const ProjectionsScreen(),
+          onGenerateRoute: (settings) {
+            pushedRoutes.add(settings.name);
+            return MaterialPageRoute(
+              builder: (_) => const Scaffold(body: Text('PUSHED')),
+              settings: settings,
+            );
+          },
+        ),
       ),
-    ));
+    );
 
     if (settle) {
       await tester.pumpAndSettle();
@@ -179,8 +195,9 @@ void main() {
   }
 
   group('trajectory', () {
-    testWidgets('reports the figures the projection computed, not the mock',
-        (tester) async {
+    testWidgets('reports the figures the projection computed, not the mock', (
+      tester,
+    ) async {
       await pumpScreen(
         tester,
         withProjection: projection(
@@ -210,10 +227,7 @@ void main() {
       expect(find.text('BEHIND'), findsOneWidget);
       // The mock's chip said ON TRACK to everyone, always.
       expect(find.text('ON TRACK'), findsNothing);
-      expect(
-        find.text('PROJECTION STATUS · FROM 6 WEIGH-INS'),
-        findsOneWidget,
-      );
+      expect(find.text('PROJECTION STATUS · FROM 6 WEIGH-INS'), findsOneWidget);
     });
 
     testWidgets('says an estimate is an estimate', (tester) async {
@@ -244,39 +258,40 @@ void main() {
       expect(find.text('68 DAYS'), findsNothing);
     });
 
-    testWidgets('shows a dash rather than a zero for a weight it does not have',
-        (tester) async {
-      await pumpScreen(
-        tester,
-        withProjection: projection(
-          currentWeightKg: 0,
-          targetWeightKg: 0,
-          basis: ProjectionBasis.none,
-          status: ProjectionStatus.insufficientData,
-          daysToGoal: null,
-        ),
-      );
+    testWidgets(
+      'shows a dash rather than a zero for a weight it does not have',
+      (tester) async {
+        await pumpScreen(
+          tester,
+          withProjection: projection(
+            currentWeightKg: 0,
+            targetWeightKg: 0,
+            basis: ProjectionBasis.none,
+            status: ProjectionStatus.insufficientData,
+            daysToGoal: null,
+          ),
+        );
 
-      // Two weights and the rate: a rate with no basis behind it is unknown,
-      // not zero.
-      expect(find.text('--'), findsNWidgets(3));
-      expect(find.text('0.0'), findsNothing);
-    });
+        // Two weights and the rate: a rate with no basis behind it is unknown,
+        // not zero.
+        expect(find.text('--'), findsNWidgets(3));
+        expect(find.text('0.0'), findsNothing);
+      },
+    );
 
-    testWidgets('asks for a weigh-in instead of drawing an empty chart',
-        (tester) async {
-      await pumpScreen(
-        tester,
-        withProjection: projection(observed: const []),
-      );
+    testWidgets('asks for a weigh-in instead of drawing an empty chart', (
+      tester,
+    ) async {
+      await pumpScreen(tester, withProjection: projection(observed: const []));
 
       expect(find.text(WeightTrajectoryChart.emptyTitle), findsOneWidget);
     });
   });
 
   group('when the projection cannot be built', () {
-    testWidgets('offers a retry and keeps the weigh-in path open',
-        (tester) async {
+    testWidgets('offers a retry and keeps the weigh-in path open', (
+      tester,
+    ) async {
       await pumpScreen(
         tester,
         projectionFailure: Exception('profile unreadable'),
@@ -291,26 +306,28 @@ void main() {
       expect(find.textContaining('profile unreadable'), findsNothing);
     });
 
-    testWidgets('titles the card and holds its height while the logs are read',
-        (tester) async {
-      // Nothing here ever completes: the shape of the first frame.
-      await pumpScreen(
-        tester,
-        projectionPending: true,
-        recommendationsPending: true,
-        settle: false,
-      );
+    testWidgets(
+      'titles the card and holds its height while the logs are read',
+      (tester) async {
+        // Nothing here ever completes: the shape of the first frame.
+        await pumpScreen(
+          tester,
+          projectionPending: true,
+          recommendationsPending: true,
+          settle: false,
+        );
 
-      expect(find.text('READING YOUR LOGS'), findsOneWidget);
-      expect(find.text('WEIGHT TRAJECTORY'), findsOneWidget);
-      expect(find.text(ProjectionsScreen.errorProjection), findsNothing);
-      // The card that holds the figures is the same height either way, so the
-      // page does not jump when they arrive.
-      expect(
-        tester.getSize(find.byType(CircularProgressIndicator).first).height,
-        32,
-      );
-    });
+        expect(find.text('READING YOUR LOGS'), findsOneWidget);
+        expect(find.text('WEIGHT TRAJECTORY'), findsOneWidget);
+        expect(find.text(ProjectionsScreen.errorProjection), findsNothing);
+        // The card that holds the figures is the same height either way, so the
+        // page does not jump when they arrive.
+        expect(
+          tester.getSize(find.byType(CircularProgressIndicator).first).height,
+          32,
+        );
+      },
+    );
   });
 
   group('recommendations', () {
@@ -342,8 +359,9 @@ void main() {
       expect(find.text(ProjectionsScreen.narratedOnDevice), findsOneWidget);
     });
 
-    testWidgets('does not claim on-device wording for a partial narration',
-        (tester) async {
+    testWidgets('does not claim on-device wording for a partial narration', (
+      tester,
+    ) async {
       // Cannot happen through `GemmaNarrator`, which falls the whole list back
       // rather than mixing voices. Asserted because the claim is about
       // provenance, and the safe answer if it ever mixed is the modest one.
@@ -370,8 +388,9 @@ void main() {
       expect(find.text('WEIGHT TRAJECTORY'), findsOneWidget);
     });
 
-    testWidgets('does not attribute an error to a wording source',
-        (tester) async {
+    testWidgets('does not attribute an error to a wording source', (
+      tester,
+    ) async {
       await pumpScreen(
         tester,
         recommendationsFailure: Exception('narrator exploded'),
@@ -387,21 +406,7 @@ void main() {
       await pumpScreen(tester);
 
       expect(find.text('ON-DEVICE WORDING'), findsNothing);
-      expect(find.text('DOWNLOAD MODEL'), findsNothing);
-    });
-
-    testWidgets('sends the user to the token screen when there is no token',
-        (tester) async {
-      model = FakeGemmaModel(
-        const GemmaModelState(stage: GemmaModelStage.needsToken),
-      );
-      await pumpScreen(tester);
-
-      expect(find.text('ON-DEVICE WORDING'), findsOneWidget);
-      await tester.tap(find.text('ADD TOKEN'));
-      await tester.pumpAndSettle();
-
-      expect(pushedRoutes, contains(AppRoutes.onDeviceModel));
+      expect(find.text('AGREE & DOWNLOAD MODEL'), findsNothing);
     });
 
     testWidgets('offers the download, and says what it costs', (tester) async {
@@ -413,42 +418,44 @@ void main() {
       // The size is stated before the tap, not after it starts.
       expect(find.textContaining('HALF A GIGABYTE'), findsOneWidget);
 
-      await tester.tap(find.text('DOWNLOAD MODEL'));
+      await tester.tap(find.text('AGREE & DOWNLOAD MODEL'));
       await tester.pumpAndSettle();
 
       expect(model.downloadCalls, 1);
     });
 
     testWidgets('reports progress while downloading', (tester) async {
-      model = FakeGemmaModel(const GemmaModelState(
-        stage: GemmaModelStage.downloading,
-        progress: 42,
-      ));
+      model = FakeGemmaModel(
+        const GemmaModelState(stage: GemmaModelStage.downloading, progress: 42),
+      );
       await pumpScreen(tester);
 
       expect(find.text('DOWNLOADING — 42%'), findsOneWidget);
       // No second offer to start what is already running.
-      expect(find.text('DOWNLOAD MODEL'), findsNothing);
+      expect(find.text('AGREE & DOWNLOAD MODEL'), findsNothing);
     });
 
     testWidgets('names what failed and offers another go', (tester) async {
-      model = FakeGemmaModel(const GemmaModelState(
-        stage: GemmaModelStage.failed,
-        message: GemmaModel.errorDownloadFailed,
-      ));
+      model = FakeGemmaModel(
+        const GemmaModelState(
+          stage: GemmaModelStage.failed,
+          message: GemmaModel.errorDownloadFailed,
+        ),
+      );
       await pumpScreen(tester);
 
       expect(find.text(GemmaModel.errorDownloadFailed), findsOneWidget);
-      await tester.tap(find.text('TRY AGAIN'));
+      await tester.tap(find.text('AGREE & DOWNLOAD MODEL'));
       await tester.pumpAndSettle();
 
       expect(model.downloadCalls, 1);
     });
 
-    testWidgets('never blocks the recommendations behind itself',
-        (tester) async {
+    testWidgets('never blocks the recommendations behind itself', (
+      tester,
+    ) async {
       model = FakeGemmaModel(
-        const GemmaModelState(stage: GemmaModelStage.needsToken),
+        const GemmaModelState(stage: GemmaModelStage.notInstalled),
       );
       await pumpScreen(tester);
 
@@ -460,8 +467,9 @@ void main() {
   });
 
   group('logging a weight', () {
-    testWidgets('opens the sheet seeded with the current weight',
-        (tester) async {
+    testWidgets('opens the sheet seeded with the current weight', (
+      tester,
+    ) async {
       await pumpScreen(
         tester,
         withProjection: projection(currentWeightKg: 78.4),
@@ -476,12 +484,10 @@ void main() {
       expect(find.widgetWithText(TextFormField, '78.4'), findsOneWidget);
     });
 
-    testWidgets('seeds nothing when there is no weight to start from',
-        (tester) async {
-      await pumpScreen(
-        tester,
-        withProjection: projection(currentWeightKg: 0),
-      );
+    testWidgets('seeds nothing when there is no weight to start from', (
+      tester,
+    ) async {
+      await pumpScreen(tester, withProjection: projection(currentWeightKg: 0));
 
       await tester.tap(find.text('LOG WEIGHT'));
       await tester.pumpAndSettle();
