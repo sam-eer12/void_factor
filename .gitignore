@@ -15,6 +15,7 @@ migrate_working_dir/
 graphify-out/
 local-models/
 deploy/.env
+.codex/
 
 # IntelliJ related
 *.iml
